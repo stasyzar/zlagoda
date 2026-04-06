@@ -24,6 +24,11 @@ export const getCheckByNumber = async (number: string): Promise<Check> => {
   return data;
 };
 
+export const getCheckById = async (id: string): Promise<Check> => {
+  const { data } = await apiClient.get(`/checks/${id}`);
+  return data;
+};
+
 export const createCheck = async (payload: CreateCheckPayload): Promise<Check> => {
   const { data } = await apiClient.post('/checks', payload);
   return data;
