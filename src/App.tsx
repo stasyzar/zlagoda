@@ -6,6 +6,7 @@ import EmployeesPage from './pages/manager/EmployeesPage';
 import CategoriesPage from './pages/manager/CategoriesPage';
 import ProductsPage from './pages/manager/ProductsPage';
 import StoreProductsPage from './pages/manager/StoreProductsPage';
+import CustomerCardsPage from './pages/manager/CustomerCardsPage';
 
 // Manager pages (поки placeholder)
 function ManagerPlaceholder({ name }: { name: string }) {
@@ -31,7 +32,7 @@ export default function App() {
               <Route path="categories" element={<CategoriesPage />} />
               <Route path="products" element={<ProductsPage />} />
               <Route path="store-products" element={<StoreProductsPage />} />
-              <Route path="customers" element={<ManagerPlaceholder name="Карти клієнтів" />} />
+              <Route path="customers" element={<CustomerCardsPage/>} />
               <Route path="checks" element={<ManagerPlaceholder name="Чеки" />} />
               <Route path="*" element={<Navigate to="employees" replace />} />
             </Routes>
