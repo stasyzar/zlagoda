@@ -7,11 +7,12 @@ import CategoriesPage from './pages/manager/CategoriesPage';
 import ProductsPage from './pages/manager/ProductsPage';
 import StoreProductsPage from './pages/manager/StoreProductsPage';
 import CustomerCardsPage from './pages/manager/CustomerCardsPage';
+import ChecksPage from './pages/manager/ChecksPage';
 
 // Manager pages (поки placeholder)
-function ManagerPlaceholder({ name }: { name: string }) {
-  return <div style={{ padding: 24 }}><h2>{name}</h2><p>Сторінка в розробці</p></div>;
-}
+// function ManagerPlaceholder({ name }: { name: string }) {
+//   return <div style={{ padding: 24 }}><h2>{name}</h2><p>Сторінка в розробці</p></div>;
+// }
 
 // Cashier pages (поки placeholder)
 function CashierPlaceholder({ name }: { name: string }) {
@@ -33,7 +34,7 @@ export default function App() {
               <Route path="products" element={<ProductsPage />} />
               <Route path="store-products" element={<StoreProductsPage />} />
               <Route path="customers" element={<CustomerCardsPage/>} />
-              <Route path="checks" element={<ManagerPlaceholder name="Чеки" />} />
+              <Route path="checks" element={<ChecksPage/>} />
               <Route path="*" element={<Navigate to="employees" replace />} />
             </Routes>
           </Layout>
