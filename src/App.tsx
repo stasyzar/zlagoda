@@ -8,6 +8,7 @@ import ProductsPage from './pages/manager/ProductsPage';
 import StoreProductsPage from './pages/manager/StoreProductsPage';
 import CustomerCardsPage from './pages/manager/CustomerCardsPage';
 import ChecksPage from './pages/manager/ChecksPage';
+import CreateCheckPage from './pages/cashier/CreateCheckPage';
 
 // Manager pages (поки placeholder)
 // function ManagerPlaceholder({ name }: { name: string }) {
@@ -46,7 +47,7 @@ export default function App() {
         <ProtectedRoute role="Cashier">
           <Layout>
             <Routes>
-              <Route path="products" element={<CashierPlaceholder name="Товари" />} />
+              <Route path="products" element={<CreateCheckPage/>} />
               <Route path="store-products" element={<CashierPlaceholder name="Товари у магазині" />} />
               <Route path="customers" element={<CashierPlaceholder name="Карти клієнтів" />} />
               <Route path="checks" element={<CashierPlaceholder name="Мої чеки" />} />
