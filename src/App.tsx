@@ -2,6 +2,8 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
+import EmployeesPage from './pages/manager/EmployeesPage';
+import CategoriesPage from './pages/manager/CategoriesPage';
 
 // Manager pages (поки placeholder)
 function ManagerPlaceholder({ name }: { name: string }) {
@@ -23,8 +25,8 @@ export default function App() {
         <ProtectedRoute role="Manager">
           <Layout>
             <Routes>
-              <Route path="employees" element={<ManagerPlaceholder name="Працівники" />} />
-              <Route path="categories" element={<ManagerPlaceholder name="Категорії" />} />
+              <Route path="employees" element={<EmployeesPage />} />
+              <Route path="categories" element={<CategoriesPage />} />
               <Route path="products" element={<ManagerPlaceholder name="Товари" />} />
               <Route path="store-products" element={<ManagerPlaceholder name="Товари у магазині" />} />
               <Route path="customers" element={<ManagerPlaceholder name="Карти клієнтів" />} />
