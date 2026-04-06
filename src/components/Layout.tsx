@@ -31,7 +31,7 @@ const cashierLinks = [
   { label: 'Товари', icon: <InventoryIcon />, path: '/cashier/products' },
   { label: 'Товари у магазині', icon: <StorefrontIcon />, path: '/cashier/store-products' },
   { label: 'Карти клієнтів', icon: <CardMembershipIcon />, path: '/cashier/customers' },
-  { label: 'Мої чеки', icon: <ReceiptIcon />, path: '/cashier/checks' },
+  { label: 'Чеки', icon: <ReceiptIcon />, path: '/cashier/checks' },
 ];
 
 interface Props {
