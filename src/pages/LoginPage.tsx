@@ -16,10 +16,20 @@ export default function LoginPage() {
   const [error] = useState('');
   const [loading] = useState(false);
 
-  const handleSubmit = async () => {
-  login({ id_employee: 'M001', role: 'Manager', token: 'mock-token' });
-  navigate('/manager/employees');
-};
+//   const handleSubmit = async () => {
+//   login({ id_employee: 'M001', role: 'Manager', token: 'mock-token' });
+//   navigate('/manager/employees');
+// };
+
+ const handleSubmit = async () => {
+    if (id.toLowerCase() === 'cashier') {
+      login({ id_employee: 'C001', role: 'Cashier', token: 'mock-token-cashier' });
+      navigate('/cashier/products');
+    } else {
+      login({ id_employee: 'M001', role: 'Manager', token: 'mock-token-manager' });
+      navigate('/manager/employees');
+    }
+  };
 
 //   const handleSubmit = async () => {
 //     setError('');
