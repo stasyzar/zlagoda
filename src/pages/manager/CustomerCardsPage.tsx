@@ -13,7 +13,7 @@ import {
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { getCustomerCards, createCustomerCard, updateCustomerCard, deleteCustomerCard } from '../../api/customerCards';
+import { getCustomers, createCustomer, updateCustomer, deleteCustomer } from '../../api/customers';
 import { type CustomerCard } from '../../types'; // Заміни на правильний шлях до типів
 
 export default function CustomerCardsPage() {
@@ -28,21 +28,21 @@ export default function CustomerCardsPage() {
 
   const { data: cards = [], isLoading, error } = useQuery({
     queryKey: ['customer-cards'],
-    queryFn: getCustomerCards,
+    queryFn: getCustomers,
   });
 
   const createMutation = useMutation({
-    mutationFn: createCustomerCard,
+    mutationFn: createCustomer,
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['customer-cards'] }); handleClose(); },
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ cardNumber, data }: { cardNumber: string; data: Partial<CustomerCard> }) => updateCustomerCard(cardNumber, data),
+    mutationFn: ({ cardNumber, data }: { cardNumber: string; data: Partial<CustomerCard> }) => updateCustomer(cardNumber, data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['customer-cards'] }); handleClose(); },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: deleteCustomerCard,
+    mutationFn: deleteCustomer,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customer-cards'] });
       setDeleteDialogOpen(false);
