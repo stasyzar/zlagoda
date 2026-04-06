@@ -4,16 +4,14 @@ import {
   Card, CardContent, Divider, IconButton, Alert, CircularProgress, Autocomplete
 } from '@mui/material';
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { Add as AddIcon, Delete as DeleteIcon, Receipt as ReceiptIcon } from '@mui/icons-material';
+import { Delete as DeleteIcon, Receipt as ReceiptIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
 import { getStoreProducts } from '../../api/storeProducts';
 import { getProducts } from '../../api/products';
-import { getCustomerCards } from '../../api/customerCards';
+import { getCustomers } from '../../api/customers';
 import { createCheck } from '../../api/checks';
 
-// Тип для елемента в кошику
 interface CartItem {
   upc: string;
   product_name: string;
@@ -23,7 +21,6 @@ interface CartItem {
   is_promo: boolean;
 }
 
-// Тип для опцій у випадаючому списку пошуку товарів
 interface ProductOption {
   label: string;
   upc: string;
@@ -43,7 +40,7 @@ export default function CreateCheckPage() {
   // Завантажуємо необхідні дані
   const { data: storeProducts = [], isLoading: loadingSP } = useQuery({ queryKey: ['store-products'], queryFn: getStoreProducts });
   const { data: products = [], isLoading: loadingP } = useQuery({ queryKey: ['products'], queryFn: getProducts });
-  const { data: cards = [], isLoading: loadingCards } = useQuery({ queryKey: ['customer-cards'], queryFn: getCustomerCards });
+  const { data: cards = [], isLoading: loadingCards } = useQuery({ queryKey: ['customer-cards'], queryFn: getCustomers});
 
   const createMutation = useMutation({
     mutationFn: createCheck,
