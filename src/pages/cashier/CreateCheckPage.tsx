@@ -69,7 +69,7 @@ export default function CreateCheckPage() {
         const p = products.find(prod => prod.id_product === sp.id_product);
         return {
           label: `${p?.product_name || 'Невідомий товар'} (${sp.promotional_product ? 'Акція' : 'Звичайний'}) - ${sp.selling_price} грн`,
-          upc: sp.UPC,
+          upc: sp.upc,
           product_name: p?.product_name || 'Невідомий товар',
           price: sp.selling_price,
           max_quantity: sp.products_number,

@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zlagoda-ui
+    ports:
+      - "80:80"
+    networks:
+      - zlagoda-net
+    restart: unless-stopped
+
+networks:
+  zlagoda-net:
+    external: true

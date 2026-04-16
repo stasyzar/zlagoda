@@ -2,34 +2,62 @@ import { useState } from 'react';
 import {
   Box, Button, Typography, TextField, InputAdornment,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  IconButton, Alert, CircularProgress, MenuItem, Chip, ToggleButton, ToggleButtonGroup
+  IconButton, Alert, CircularProgress, MenuItem, Chip, ToggleButton, ToggleButtonGroup, Tooltip,
 } from '@mui/material';
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import {
   Add as AddIcon,
+  Print as PrintIcon,
   Search as SearchIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
-import { getStoreProducts, createStoreProduct, updateStoreProduct, deleteStoreProduct } from '../../api/storeProducts';
-import { getProducts } from '../../api/products';
+import {
+  getStoreProductsList,
+  getStoreProductsSearch,
+  getStoreProducts,
+  createStoreProduct,
+  updateStoreProduct,
+  deleteStoreProduct,
+} from '../../api/storeProducts';
+import { getProducts, getProductById } from '../../api/products';
 import { type StoreProduct } from '../../types';
+import { openReportPreview } from '../../utils/reportPrint';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 export default function StoreProductsPage() {
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'promo' | 'regular'>('all');
+  const [listFilter, setListFilter] = useState<'all' | 'promo' | 'regular'>('all');
+  const [sortMode, setSortMode] = useState<'name' | 'quantity'>('name');
+  const [searchInput, setSearchInput] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selected, setSelected] = useState<StoreProduct | null>(null);
+  const [apiError, setApiError] = useState('');
 
-  const { register, handleSubmit, reset, control, formState: { errors } } = useForm<StoreProduct>();
+  const { register, handleSubmit, reset, control, watch, formState: { errors } } = useForm<StoreProduct>();
+  const watchIdProduct = watch('id_product');
+  const watchPromo = watch('promotional_product');
+  const idProductNum = typeof watchIdProduct === 'number' ? watchIdProduct : Number(watchIdProduct);
+  const promoCreateBlocked =
+    !selected && Boolean(watchPromo) && Number.isFinite(idProductNum) && idProductNum > 0;
+
+  const { data: productCaps, isFetching: capsLoading } = useQuery({
+    queryKey: ['product', idProductNum, 'caps'],
+    queryFn: () => getProductById(idProductNum),
+    enabled: dialogOpen && promoCreateBlocked,
+  });
 
   const { data: storeProducts = [], isLoading, error } = useQuery({
-    queryKey: ['store-products'],
-    queryFn: getStoreProducts,
+    queryKey: ['store-products-page', listFilter, sortMode, appliedSearch],
+    queryFn: () => {
+      const q = appliedSearch.trim();
+      if (q) return getStoreProductsSearch(q, listFilter, sortMode);
+      return getStoreProductsList(listFilter, sortMode);
+    },
   });
 
   const { data: products = [] } = useQuery({
@@ -39,24 +67,41 @@ export default function StoreProductsPage() {
 
   const createMutation = useMutation({
     mutationFn: createStoreProduct,
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['store-products'] }); handleClose(); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['store-products'] });
+      queryClient.invalidateQueries({ queryKey: ['store-products-page'] });
+      handleClose();
+    },
+    onError: (err) => setApiError(getApiErrorMessage(err)),
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ upc, data }: { upc: string; data: Partial<StoreProduct> }) => updateStoreProduct(upc, data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['store-products'] }); handleClose(); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['store-products'] });
+      queryClient.invalidateQueries({ queryKey: ['store-products-page'] });
+      handleClose();
+    },
+    onError: (err) => setApiError(getApiErrorMessage(err)),
   });
 
   const deleteMutation = useMutation({
     mutationFn: deleteStoreProduct,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['store-products'] });
+      queryClient.invalidateQueries({ queryKey: ['store-products-page'] });
       setDeleteDialogOpen(false);
       setSelected(null);
     },
   });
 
+  const applyFilters = () => {
+    setApiError('');
+    setAppliedSearch(searchInput.trim());
+  };
+
   const handleOpen = (product?: StoreProduct) => {
+    setApiError('');
     if (product) { setSelected(product); reset(product); }
     else { setSelected(null); reset({ promotional_product: false }); }
     setDialogOpen(true);
@@ -65,43 +110,60 @@ export default function StoreProductsPage() {
   const handleClose = () => { setDialogOpen(false); setSelected(null); reset({}); };
 
   const onSubmit = (data: StoreProduct) => {
+    setApiError('');
+    const isPromo = Boolean(data.promotional_product);
     const payload = {
       ...data,
-      selling_price: Number(data.selling_price),
+      upc_prom: undefined,
+      selling_price: isPromo ? undefined : Number(data.selling_price),
       products_number: Number(data.products_number),
-      promotional_product: Boolean(data.promotional_product),
+      promotional_product: isPromo,
     };
-    if (selected) updateMutation.mutate({ upc: selected.UPC, data: payload });
-    else createMutation.mutate(payload);
+    if (selected) updateMutation.mutate({ upc: selected.upc, data: payload as any });
+    else createMutation.mutate(payload as any);
   };
 
-  const filtered = storeProducts
-    .filter((p) => {
-      const product = products.find((pr) => pr.id_product === p.id_product);
-      return product?.product_name.toLowerCase().includes(search.toLowerCase()) ?? true;
-    })
-    .filter((p) => {
-      if (filter === 'promo') return p.promotional_product;
-      if (filter === 'regular') return !p.promotional_product;
-      return true;
-    });
+  const handlePrintReport = () => {
+    Promise.all([getStoreProducts(), getProducts()])
+      .then(([reportRows, catalog]) => {
+        openReportPreview(
+          'Звіт: Товари у магазині',
+          [
+            { header: 'UPC', getValue: (p: StoreProduct) => p.upc },
+            {
+              header: 'Товар',
+              getValue: (p: StoreProduct) =>
+                p.product_name ?? catalog.find((x) => x.id_product === p.id_product)?.product_name ?? p.id_product,
+            },
+            { header: 'Ціна', getValue: (p: StoreProduct) => p.selling_price },
+            { header: 'Кількість', getValue: (p: StoreProduct) => p.products_number },
+            { header: 'Тип', getValue: (p: StoreProduct) => (p.promotional_product ? 'Акційний' : 'Звичайний') },
+          ],
+          reportRows,
+          'Усі позиції, відсортовані за назвою товару (вимога звіту)',
+        );
+      })
+      .catch(() => setApiError('Не вдалося сформувати звіт по товарах у магазині.'));
+  };
 
   const columns: GridColDef[] = [
-    { field: 'UPC', headerName: 'UPC', width: 130 },
+    { field: 'upc', headerName: 'UPC', width: 130, sortable: false, filterable: false },
     {
-      field: 'id_product', headerName: 'Товар', flex: 1,
-      renderCell: (params) => {
-        const product = products.find((p) => p.id_product === params.value);
-        return product?.product_name ?? params.value;
-      },
+      field: 'id_product', headerName: 'Товар', flex: 1, sortable: false, filterable: false,
+      renderCell: (params) =>
+        params.row.product_name ?? products.find((p) => p.id_product === params.value)?.product_name ?? params.value,
     },
     {
-      field: 'selling_price', headerName: 'Ціна', width: 100,
+      field: 'selling_price', headerName: 'Ціна', width: 100, sortable: false, filterable: false,
       renderCell: (params) => `${params.value} грн`,
     },
-    { field: 'products_number', headerName: 'К-сть', width: 80 },
+    { field: 'products_number', headerName: 'К-сть', width: 80, sortable: false, filterable: false },
     {
-      field: 'promotional_product', headerName: 'Акція', width: 90,
+      field: 'upc_prom', headerName: 'Пара (UPC)', width: 140, sortable: false, filterable: false,
+      renderCell: (params) => params.value || '—',
+    },
+    {
+      field: 'promotional_product', headerName: 'Акція', width: 90, sortable: false, filterable: false,
       renderCell: (params) => (
         <Chip
           label={params.value ? 'Акційний' : 'Звичайний'}
@@ -111,17 +173,40 @@ export default function StoreProductsPage() {
       ),
     },
     {
-      field: 'actions', headerName: 'Дії', width: 90, sortable: false,
-      renderCell: (params) => (
-        <Box>
-          <IconButton size="small" onClick={() => handleOpen(params.row)}>
-            <EditIcon fontSize="small" />
-          </IconButton>
-          <IconButton size="small" color="error" onClick={() => { setSelected(params.row); setDeleteDialogOpen(true); }}>
-            <DeleteIcon fontSize="small" />
-          </IconButton>
-        </Box>
-      ),
+      field: 'actions', headerName: 'Дії', width: 90, sortable: false, filterable: false,
+      renderCell: (params) => {
+        const sales = (params.row.sale_rows_count ?? 0) > 0;
+        const regularBlockedByPromo =
+          !params.row.promotional_product && Boolean(params.row.upc_prom);
+        const deleteTitle = sales
+          ? 'Неможливо видалити: цей UPC є в історії продажів'
+          : regularBlockedByPromo
+            ? 'Спочатку видаліть акційний UPC, прив’язаний до цієї звичайної позиції'
+            : 'Видалити позицію з магазину';
+        return (
+          <Box>
+            <IconButton size="small" onClick={() => handleOpen(params.row)}>
+              <EditIcon fontSize="small" />
+            </IconButton>
+            <Tooltip title={deleteTitle}>
+              <span>
+                <IconButton
+                  size="small"
+                  color="error"
+                  disabled={sales || regularBlockedByPromo}
+                  onClick={() => {
+                    deleteMutation.reset();
+                    setSelected(params.row);
+                    setDeleteDialogOpen(true);
+                  }}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
+        );
+      },
     },
   ];
 
@@ -131,44 +216,69 @@ export default function StoreProductsPage() {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h5" fontWeight={600}>Товари у магазині</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpen()}>
-          Додати
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button variant="outlined" startIcon={<PrintIcon />} onClick={handlePrintReport}>
+            Звіт
+          </Button>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpen()}>
+            Додати
+          </Button>
+        </Box>
       </Box>
 
-      <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
-        <TextField
-          placeholder="Пошук за назвою..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          size="small"
-          sx={{ width: 300 }}
-          InputProps={{
-            startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment>
-          }}
-        />
+      {apiError ? <Alert severity="error" sx={{ mb: 2 }}>{apiError}</Alert> : null}
+
+      <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
         <ToggleButtonGroup
-          value={filter}
+          value={listFilter}
           exclusive
-          onChange={(_, val) => val && setFilter(val)}
+          onChange={(_, val) => val && setListFilter(val)}
           size="small"
         >
-          <ToggleButton value="all">Всі</ToggleButton>
+          <ToggleButton value="all">Усі</ToggleButton>
           <ToggleButton value="promo">Акційні</ToggleButton>
           <ToggleButton value="regular">Звичайні</ToggleButton>
         </ToggleButtonGroup>
+        <ToggleButtonGroup
+          value={sortMode}
+          exclusive
+          onChange={(_, val) => val && setSortMode(val)}
+          size="small"
+        >
+          <ToggleButton value="name">За назвою</ToggleButton>
+          <ToggleButton value="quantity">За кількістю</ToggleButton>
+        </ToggleButtonGroup>
+        <TextField
+          placeholder="Пошук за назвою або UPC…"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          size="small"
+          sx={{ width: 280 }}
+          InputProps={{
+            startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment>,
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') applyFilters();
+          }}
+        />
+        <Button variant="outlined" size="small" onClick={applyFilters}>
+          Застосувати
+        </Button>
       </Box>
 
       <Box sx={{ bgcolor: 'white', borderRadius: 2, overflow: 'hidden' }}>
         <DataGrid
-          rows={filtered}
+          rows={storeProducts}
           columns={columns}
-          getRowId={(row) => row.UPC}
+          getRowId={(row) => row.upc}
           loading={isLoading}
           autoHeight
           pageSizeOptions={[10, 25, 50]}
           initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
           disableRowSelectionOnClick
+          disableColumnMenu
+          disableColumnFilter
+          disableColumnSorting
         />
       </Box>
 
@@ -176,12 +286,18 @@ export default function StoreProductsPage() {
         <DialogTitle>{selected ? 'Редагувати товар у магазині' : 'Новий товар у магазині'}</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+            {apiError && dialogOpen ? <Alert severity="error">{apiError}</Alert> : null}
             <TextField
               label="UPC" fullWidth size="small"
               disabled={!!selected}
-              {...register('UPC', { required: "Обов'язкове поле" })}
-              error={!!errors.UPC}
-              helperText={errors.UPC?.message}
+              {...register('upc', { required: "Обов'язкове поле" })}
+              error={!!errors.upc}
+              helperText={
+                errors.upc?.message
+                ?? (!selected && !watchPromo
+                  ? 'Нова партія з новою ціною: якщо звичайний UPC цього товару вже є в магазині, вкажіть той самий UPC — кількість додасться, увесь залишок переоціниться на нову ціну.'
+                  : undefined)
+              }
             />
             <TextField
               select label="Товар" fullWidth size="small"
@@ -195,11 +311,32 @@ export default function StoreProductsPage() {
                 </MenuItem>
               ))}
             </TextField>
-            <TextField
-              label="Ціна продажу (грн)" fullWidth size="small" type="number"
-              {...register('selling_price', { required: "Обов'язкове поле", min: 0 })}
-              error={!!errors.selling_price}
-            />
+            {selected?.promotional_product ? (
+              <TextField
+                label="Ціна продажу (грн)"
+                fullWidth
+                size="small"
+                type="number"
+                value={selected.selling_price}
+                disabled
+                helperText="Для акційного UPC ціна лише від звичайного (×0.8), змінюється на бекенді"
+              />
+            ) : !selected && watchPromo ? (
+              <TextField
+                label="Ціна продажу (грн)"
+                fullWidth
+                size="small"
+                value="—"
+                disabled
+                helperText="Для нового акційного UPC ціна обчислюється автоматично (звичайний × 0.8)"
+              />
+            ) : (
+              <TextField
+                label="Ціна продажу (грн)" fullWidth size="small" type="number"
+                {...register('selling_price', { required: "Обов'язкове поле", min: 0 })}
+                error={!!errors.selling_price}
+              />
+            )}
             <TextField
               label="Кількість одиниць" fullWidth size="small" type="number"
               {...register('products_number', { required: "Обов'язкове поле", min: 0 })}
@@ -214,16 +351,27 @@ export default function StoreProductsPage() {
                   select label="Тип товару" fullWidth size="small"
                   value={field.value ? 'true' : 'false'}
                   onChange={(e) => field.onChange(e.target.value === 'true')}
+                  disabled={!!selected}
+                  helperText={
+                    selected
+                      ? 'Тип не змінюється після створення'
+                      : 'Акційний: спочатку має бути звичайний UPC цього товару в магазині; ціна = ×0.8'
+                  }
                 >
                   <MenuItem value="false">Звичайний</MenuItem>
                   <MenuItem value="true">Акційний</MenuItem>
                 </TextField>
               )}
             />
-            <TextField
-              label="UPC акційного (необов'язково)" fullWidth size="small"
-              {...register('UPC_prom')}
-            />
+            {!selected && watchPromo && promoCreateBlocked && capsLoading ? (
+              <Alert severity="info">Перевірка наявності звичайного UPC…</Alert>
+            ) : null}
+            {!selected && watchPromo && promoCreateBlocked && !capsLoading && productCaps && !productCaps.has_regular_store_product ? (
+              <Alert severity="warning">
+                Неможливо створити акційний товар: для обраного товару в каталозі ще немає{' '}
+                <strong>звичайної</strong> позиції в магазині. Спочатку додайте звичайний UPC для цього id_product.
+              </Alert>
+            ) : null}
           </Box>
         </DialogContent>
         <DialogActions>
@@ -231,7 +379,14 @@ export default function StoreProductsPage() {
           <Button
             variant="contained"
             onClick={handleSubmit(onSubmit)}
-            disabled={createMutation.isPending || updateMutation.isPending}
+            disabled={
+              createMutation.isPending
+              || updateMutation.isPending
+              || (!selected
+                && watchPromo
+                && promoCreateBlocked
+                && (!productCaps || !productCaps.has_regular_store_product))
+            }
           >
             {createMutation.isPending || updateMutation.isPending
               ? <CircularProgress size={20} />
@@ -240,18 +395,39 @@ export default function StoreProductsPage() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-        <DialogTitle>Видалити товар?</DialogTitle>
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => {
+          deleteMutation.reset();
+          setDeleteDialogOpen(false);
+        }}
+      >
+        <DialogTitle>Видалити позицію з магазину?</DialogTitle>
         <DialogContent>
-          <Typography>
-            Видалити товар з UPC <strong>{selected?.UPC}</strong>?
+          <Typography gutterBottom>
+            Видалити UPC <strong>{selected?.upc}</strong>?
           </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            Якщо цей UPC зустрічається в історії продажів, видалити позицію не вийде. Звичайний UPC з прив’язаним
+            акційним спочатку потрібно «розв’язати»: видаліть акційний UPC, потім звичайний (або змініть дані через API).
+          </Typography>
+          {deleteMutation.isError ? (
+            <Alert severity="error">{getApiErrorMessage(deleteMutation.error)}</Alert>
+          ) : null}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Скасувати</Button>
           <Button
-            color="error" variant="contained"
-            onClick={() => selected && deleteMutation.mutate(selected.UPC)}
+            onClick={() => {
+              deleteMutation.reset();
+              setDeleteDialogOpen(false);
+            }}
+          >
+            Скасувати
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={() => selected && deleteMutation.mutate(selected.upc)}
             disabled={deleteMutation.isPending}
           >
             Видалити

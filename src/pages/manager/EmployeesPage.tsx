@@ -2,47 +2,90 @@ import { useState } from 'react';
 import {
   Box, Button, Typography, TextField, InputAdornment,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  IconButton, Chip, Alert, CircularProgress
+  IconButton, Chip, Alert, CircularProgress, Tooltip, Table, TableBody, TableCell, TableHead, TableRow,
 } from '@mui/material';
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import {
   Add as AddIcon,
+  Print as PrintIcon,
   Search as SearchIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { getEmployees, createEmployee, updateEmployee, deleteEmployee } from '../../api/employees';
+import { AxiosError } from 'axios';
+import {
+  getEmployeesSortedBySurname,
+  getCashiersSortedBySurname,
+  searchEmployeesBySurname,
+  searchEmployeeContactsBySurname,
+  getEmployees,
+  createEmployee,
+  updateEmployee,
+  deleteEmployee,
+  type EmployeeCreatePayload,
+} from '../../api/employees';
 import { type Employee } from '../../types';
+import { openReportPreview } from '../../utils/reportPrint';
+import { getApiErrorMessage } from '../../utils/apiError';
 
-type EmployeeForm = Omit<Employee, 'id_employee'>;
+const PHONE_PATTERN = /^\+?[0-9]{1,12}$/;
+const PHONE_HINT = 'Формат: +XXXXXXXXXXXX (до 12 цифр)';
+
+type EmployeeForm = Omit<Employee, 'id_employee'> & {
+  id_employee?: string;
+  password?: string;
+};
+
+function getApiError(err: unknown): string {
+  if (err instanceof AxiosError) {
+    const d = err.response?.data;
+    if (d?.validationErrors) {
+      return Object.values(d.validationErrors as Record<string, string>).join('; ');
+    }
+    return d?.message || 'Помилка сервера';
+  }
+  return 'Невідома помилка';
+}
 
 export default function EmployeesPage() {
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState<'all' | 'cashiers' | 'search' | 'contacts'>('all');
+  const [searchInput, setSearchInput] = useState('');
+  const [appliedSurname, setAppliedSurname] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selected, setSelected] = useState<Employee | null>(null);
+  const [apiError, setApiError] = useState('');
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<EmployeeForm>();
 
-  // Завантаження даних
   const { data: employees = [], isLoading, error } = useQuery({
-    queryKey: ['employees'],
-    queryFn: getEmployees,
+    queryKey: ['employees-page', viewMode, appliedSurname],
+    queryFn: async () => {
+      if (viewMode === 'cashiers') return getCashiersSortedBySurname();
+      if (viewMode === 'search') return searchEmployeesBySurname(appliedSurname);
+      return getEmployeesSortedBySurname();
+    },
+    enabled: viewMode !== 'contacts' && (viewMode !== 'search' || Boolean(appliedSurname.trim())),
   });
 
-  // Створення
+  const { data: contacts = [], isLoading: loadingContacts, error: contactsError } = useQuery({
+    queryKey: ['employee-contacts', appliedSurname],
+    queryFn: () => searchEmployeeContactsBySurname(appliedSurname),
+    enabled: viewMode === 'contacts' && Boolean(appliedSurname.trim()),
+  });
+
   const createMutation = useMutation({
     mutationFn: createEmployee,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employees'] });
       handleClose();
     },
+    onError: (err) => setApiError(getApiError(err)),
   });
 
-  // Оновлення
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Employee> }) =>
       updateEmployee(id, data),
@@ -50,9 +93,9 @@ export default function EmployeesPage() {
       queryClient.invalidateQueries({ queryKey: ['employees'] });
       handleClose();
     },
+    onError: (err) => setApiError(getApiError(err)),
   });
 
-  // Видалення
   const deleteMutation = useMutation({
     mutationFn: deleteEmployee,
     onSuccess: () => {
@@ -63,12 +106,13 @@ export default function EmployeesPage() {
   });
 
   const handleOpen = (employee?: Employee) => {
+    setApiError('');
     if (employee) {
       setSelected(employee);
-      reset(employee);
+      reset({ ...employee });
     } else {
       setSelected(null);
-      reset({});
+      reset({ empl_role: 'cashier' });
     }
     setDialogOpen(true);
   };
@@ -76,103 +120,220 @@ export default function EmployeesPage() {
   const handleClose = () => {
     setDialogOpen(false);
     setSelected(null);
+    setApiError('');
     reset({});
   };
 
   const onSubmit = (data: EmployeeForm) => {
+    setApiError('');
     if (selected) {
-      updateMutation.mutate({ id: selected.id_employee, data });
+      const { id_employee: _, password: __, ...updateData } = data;
+      updateMutation.mutate({ id: selected.id_employee, data: updateData });
     } else {
-      createMutation.mutate(data);
+      createMutation.mutate(data as EmployeeCreatePayload);
     }
   };
 
-  const handleDeleteClick = (employee: Employee) => {
-    setSelected(employee);
-    setDeleteDialogOpen(true);
+  const handlePrintReport = async () => {
+    try {
+      const reportEmployees = await getEmployees();
+      openReportPreview(
+        'Звіт: Працівники',
+        [
+          { header: 'ID', getValue: (e: Employee) => e.id_employee },
+          { header: 'Прізвище', getValue: (e: Employee) => e.empl_surname },
+          { header: 'Імʼя', getValue: (e: Employee) => e.empl_name },
+          { header: 'По батькові', getValue: (e: Employee) => e.empl_patronymic },
+          { header: 'Посада', getValue: (e: Employee) => e.empl_role },
+          { header: 'Телефон', getValue: (e: Employee) => e.phone_number },
+          { header: 'Адреса', getValue: (e: Employee) => `${e.city}, ${e.street}, ${e.zip_code}` },
+        ],
+        reportEmployees,
+        'Усі працівники, відсортовані за прізвищем',
+      );
+    } catch {
+      setApiError('Не вдалося сформувати звіт по працівниках.');
+    }
   };
 
-  // Фільтрація за прізвищем
-  const filtered = employees.filter((e) =>
-    e.empl_surname.toLowerCase().includes(search.toLowerCase())
-  );
+  const applySearch = () => {
+    const value = searchInput.trim();
+    if (!value && (viewMode === 'search' || viewMode === 'contacts')) {
+      setApiError('Для пошуку введи прізвище.');
+      return;
+    }
+    setApiError('');
+    setAppliedSurname(value);
+  };
 
   const columns: GridColDef[] = [
-    { field: 'id_employee', headerName: 'ID', width: 100 },
-    { field: 'empl_surname', headerName: 'Прізвище', width: 130 },
-    { field: 'empl_name', headerName: 'Ім\'я', width: 120 },
-    { field: 'empl_patronymic', headerName: 'По батькові', width: 130 },
+    { field: 'id_employee', headerName: 'ID', width: 100, sortable: false, filterable: false },
+    { field: 'empl_surname', headerName: 'Прізвище', width: 130, sortable: false, filterable: false },
+    { field: 'empl_name', headerName: 'Ім\'я', width: 120, sortable: false, filterable: false },
+    { field: 'empl_patronymic', headerName: 'По батькові', width: 130, sortable: false, filterable: false },
     {
-      field: 'empl_role', headerName: 'Посада', width: 120,
+      field: 'empl_role', headerName: 'Посада', width: 120, sortable: false, filterable: false,
       renderCell: (params) => (
         <Chip
-          label={params.value === 'Manager' ? 'Менеджер' : 'Касир'}
-          color={params.value === 'Manager' ? 'primary' : 'default'}
+          label={params.value === 'manager' ? 'Менеджер' : 'Касир'}
+          color={params.value === 'manager' ? 'primary' : 'default'}
           size="small"
         />
       ),
     },
     {
-      field: 'salary', headerName: 'Зарплата', width: 120,
+      field: 'salary', headerName: 'Зарплата', width: 120, sortable: false, filterable: false,
       renderCell: (params) => `${params.value} грн`,
     },
-    { field: 'phone_number', headerName: 'Телефон', width: 140 },
-    { field: 'city', headerName: 'Місто', width: 110 },
+    { field: 'phone_number', headerName: 'Телефон', width: 140, sortable: false, filterable: false },
+    { field: 'city', headerName: 'Місто', width: 110, sortable: false, filterable: false },
     {
-      field: 'actions', headerName: 'Дії', width: 100, sortable: false,
+      field: 'actions', headerName: 'Дії', width: 100, sortable: false, filterable: false,
       renderCell: (params) => (
         <Box>
           <IconButton size="small" onClick={() => handleOpen(params.row)}>
             <EditIcon fontSize="small" />
           </IconButton>
-          <IconButton size="small" color="error" onClick={() => handleDeleteClick(params.row)}>
-            <DeleteIcon fontSize="small" />
-          </IconButton>
+          <Tooltip
+            title={
+              (params.row.check_count ?? 0) > 0
+                ? 'Неможливо видалити: є чеки, оформлені цим працівником'
+                : 'Видалити працівника'
+            }
+          >
+            <span>
+              <IconButton
+                size="small"
+                color="error"
+                disabled={(params.row.check_count ?? 0) > 0}
+                onClick={() => {
+                  deleteMutation.reset();
+                  setSelected(params.row);
+                  setDeleteDialogOpen(true);
+                }}
+              >
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
         </Box>
       ),
     },
   ];
 
-  if (error) return <Alert severity="error">Помилка завантаження даних</Alert>;
+  if (error) return <Alert severity="error">Помилка завантаження даних працівників</Alert>;
+  if (contactsError) return <Alert severity="error">Помилка завантаження контактів</Alert>;
 
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h5" fontWeight={600}>Працівники</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpen()}>
-          Додати
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button variant="outlined" startIcon={<PrintIcon />} onClick={handlePrintReport}>
+            Звіт
+          </Button>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpen()}>
+            Додати
+          </Button>
+        </Box>
+      </Box>
+
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+        <Button variant={viewMode === 'all' ? 'contained' : 'outlined'} onClick={() => { setViewMode('all'); setAppliedSurname(''); setApiError(''); }}>
+          Усі працівники (за прізвищем)
+        </Button>
+        <Button variant={viewMode === 'cashiers' ? 'contained' : 'outlined'} onClick={() => { setViewMode('cashiers'); setAppliedSurname(''); setApiError(''); }}>
+          Усі касири (за прізвищем)
+        </Button>
+        <Button variant={viewMode === 'search' ? 'contained' : 'outlined'} onClick={() => { setViewMode('search'); setApiError(''); }}>
+          Пошук працівника за прізвищем
+        </Button>
+        <Button variant={viewMode === 'contacts' ? 'contained' : 'outlined'} onClick={() => { setViewMode('contacts'); setApiError(''); }}>
+          Телефон і адреса за прізвищем
         </Button>
       </Box>
 
-      <TextField
-        placeholder="Пошук за прізвищем..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        size="small"
-        sx={{ mb: 2, width: 300 }}
-        InputProps={{
-          startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment>
-        }}
-      />
+      {(viewMode === 'search' || viewMode === 'contacts') ? (
+        <Box sx={{ display: 'flex', gap: 1, mb: 2, alignItems: 'center' }}>
+          <TextField
+            placeholder="Введи прізвище..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            size="small"
+            sx={{ width: 320 }}
+            InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }}
+          />
+          <Button variant="contained" onClick={applySearch}>Застосувати</Button>
+        </Box>
+      ) : null}
 
-      <Box sx={{ bgcolor: 'white', borderRadius: 2, overflow: 'hidden' }}>
-        <DataGrid
-          rows={filtered}
-          columns={columns}
-          getRowId={(row) => row.id_employee}
-          loading={isLoading}
-          autoHeight
-          pageSizeOptions={[10, 25, 50]}
-          initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
-          disableRowSelectionOnClick
-        />
-      </Box>
+      {viewMode === 'contacts' ? (
+        <Box sx={{ bgcolor: 'white', borderRadius: 2, overflow: 'hidden', p: 2 }}>
+          {loadingContacts ? <CircularProgress /> : (
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>ID</TableCell>
+                  <TableCell>ПІБ</TableCell>
+                  <TableCell>Телефон</TableCell>
+                  <TableCell>Адреса</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {contacts.map((c) => (
+                  <TableRow key={c.id_employee}>
+                    <TableCell>{c.id_employee}</TableCell>
+                    <TableCell>{c.full_name}</TableCell>
+                    <TableCell>{c.phone_number}</TableCell>
+                    <TableCell>{c.address}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Box>
+      ) : (
+        <Box sx={{ bgcolor: 'white', borderRadius: 2, overflow: 'hidden' }}>
+          <DataGrid
+            rows={employees}
+            columns={columns}
+            getRowId={(row) => row.id_employee}
+            loading={isLoading}
+            autoHeight
+            pageSizeOptions={[10, 25, 50]}
+            initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+          disableColumnFilter
+          disableColumnMenu
+          disableColumnSorting
+            disableRowSelectionOnClick
+          />
+        </Box>
+      )}
 
-      {/* Діалог додавання/редагування */}
       <Dialog open={dialogOpen} onClose={handleClose} maxWidth="sm" fullWidth>
         <DialogTitle>{selected ? 'Редагувати працівника' : 'Новий працівник'}</DialogTitle>
         <DialogContent>
-          <Box component="form" sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+            {apiError && <Alert severity="error">{apiError}</Alert>}
+
+            {/* ID та пароль — тільки при створенні */}
+            {!selected && (
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <TextField
+                  label="ID працівника" fullWidth size="small"
+                  {...register('id_employee', { required: "Обов'язкове поле" })}
+                  error={!!errors.id_employee}
+                  helperText={errors.id_employee?.message}
+                />
+                <TextField
+                  label="Пароль" type="password" fullWidth size="small"
+                  {...register('password', { required: "Обов'язкове поле", minLength: { value: 6, message: 'Мінімум 6 символів' } })}
+                  error={!!errors.password}
+                  helperText={errors.password?.message}
+                />
+              </Box>
+            )}
+
             <Box sx={{ display: 'flex', gap: 2 }}>
               <TextField
                 label="Прізвище" fullWidth size="small"
@@ -187,44 +348,61 @@ export default function EmployeesPage() {
                 helperText={errors.empl_name?.message}
               />
             </Box>
+
             <TextField
               label="По батькові" fullWidth size="small"
               {...register('empl_patronymic')}
             />
+
             <TextField
               label="Посада" fullWidth size="small" select
-              defaultValue="Cashier"
+              defaultValue="cashier"
               {...register('empl_role', { required: "Обов'язкове поле" })}
               SelectProps={{ native: true }}
             >
-              <option value="Manager">Менеджер</option>
-              <option value="Cashier">Касир</option>
+              <option value="manager">Менеджер</option>
+              <option value="cashier">Касир</option>
             </TextField>
+
             <TextField
-              label="Зарплата" fullWidth size="small" type="number"
-              {...register('salary', { required: "Обов'язкове поле", min: 0 })}
+              label="Зарплата (грн)" fullWidth size="small" type="number"
+              {...register('salary', { required: "Обов'язкове поле", min: { value: 0, message: 'Не може бути від\'ємною' } })}
               error={!!errors.salary}
+              helperText={errors.salary?.message}
             />
+
             <Box sx={{ display: 'flex', gap: 2 }}>
               <TextField
                 label="Дата народження" fullWidth size="small" type="date"
                 InputLabelProps={{ shrink: true }}
                 {...register('date_of_birth', { required: "Обов'язкове поле" })}
+                error={!!errors.date_of_birth}
+                helperText={errors.date_of_birth?.message}
               />
               <TextField
                 label="Дата початку роботи" fullWidth size="small" type="date"
                 InputLabelProps={{ shrink: true }}
                 {...register('date_of_start', { required: "Обов'язкове поле" })}
+                error={!!errors.date_of_start}
+                helperText={errors.date_of_start?.message}
               />
             </Box>
+
             <TextField
               label="Телефон" fullWidth size="small"
-              {...register('phone_number', { required: "Обов'язкове поле", maxLength: 13 })}
+              placeholder="+380XXXXXXXXX"
+              {...register('phone_number', {
+                required: "Обов'язкове поле",
+                pattern: { value: PHONE_PATTERN, message: PHONE_HINT },
+              })}
+              error={!!errors.phone_number}
+              helperText={errors.phone_number?.message ?? PHONE_HINT}
             />
+
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <TextField label="Місто" fullWidth size="small" {...register('city')} />
-              <TextField label="Вулиця" fullWidth size="small" {...register('street')} />
-              <TextField label="Індекс" fullWidth size="small" {...register('zip_code')} />
+              <TextField label="Місто" fullWidth size="small" {...register('city', { required: "Обов'язкове поле" })} error={!!errors.city} />
+              <TextField label="Вулиця" fullWidth size="small" {...register('street', { required: "Обов'язкове поле" })} error={!!errors.street} />
+              <TextField label="Індекс" fullWidth size="small" {...register('zip_code', { required: "Обов'язкове поле" })} error={!!errors.zip_code} />
             </Box>
           </Box>
         </DialogContent>
@@ -242,19 +420,37 @@ export default function EmployeesPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Діалог підтвердження видалення */}
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => {
+          deleteMutation.reset();
+          setDeleteDialogOpen(false);
+        }}
+      >
         <DialogTitle>Видалити працівника?</DialogTitle>
         <DialogContent>
-          <Typography>
-            Ви впевнені що хочете видалити{' '}
-            <strong>{selected?.empl_surname} {selected?.empl_name}</strong>?
+          <Typography gutterBottom>
+            Видалити <strong>{selected?.empl_surname} {selected?.empl_name}</strong>?
           </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            Поки існує хоча б один чек, оформлений цим працівником, видалити запис неможливо.
+          </Typography>
+          {deleteMutation.isError ? (
+            <Alert severity="error">{getApiErrorMessage(deleteMutation.error)}</Alert>
+          ) : null}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Скасувати</Button>
           <Button
-            color="error" variant="contained"
+            onClick={() => {
+              deleteMutation.reset();
+              setDeleteDialogOpen(false);
+            }}
+          >
+            Скасувати
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
             onClick={() => selected && deleteMutation.mutate(selected.id_employee)}
             disabled={deleteMutation.isPending}
           >

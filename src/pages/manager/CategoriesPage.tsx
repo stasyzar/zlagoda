@@ -2,19 +2,22 @@ import { useState } from 'react';
 import {
   Box, Button, Typography, TextField, InputAdornment,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  IconButton, Alert, CircularProgress
+  IconButton, Alert, CircularProgress, Tooltip,
 } from '@mui/material';
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import {
   Add as AddIcon,
+  Print as PrintIcon,
   Search as SearchIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { getCategories, createCategory, updateCategory, deleteCategory } from '../../api/categories';
+import { getCategoriesByQuery, createCategory, updateCategory, deleteCategory } from '../../api/categories';
 import { type Category } from '../../types';
+import { openReportPreview } from '../../utils/reportPrint';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 type CategoryForm = Omit<Category, 'category_number'>;
 
@@ -28,8 +31,8 @@ export default function CategoriesPage() {
   const { register, handleSubmit, reset, formState: { errors } } = useForm<CategoryForm>();
 
   const { data: categories = [], isLoading, error } = useQuery({
-    queryKey: ['categories'],
-    queryFn: getCategories,
+    queryKey: ['categories', search],
+    queryFn: () => getCategoriesByQuery(search),
   });
 
   const createMutation = useMutation({
@@ -64,9 +67,17 @@ export default function CategoriesPage() {
     else createMutation.mutate(data);
   };
 
-  const filtered = categories.filter((c) =>
-    c.category_name.toLowerCase().includes(search.toLowerCase())
-  );
+  const handlePrintReport = () => {
+    openReportPreview(
+      'Звіт: Категорії',
+      [
+        { header: 'Номер', getValue: (c: Category) => c.category_number },
+        { header: 'Назва', getValue: (c: Category) => c.category_name },
+      ],
+      categories,
+      search ? `Назва містить: "${search}"` : 'Без фільтрів',
+    );
+  };
 
   const columns: GridColDef[] = [
     { field: 'category_number', headerName: '№', width: 80 },
@@ -78,9 +89,28 @@ export default function CategoriesPage() {
           <IconButton size="small" onClick={() => handleOpen(params.row)}>
             <EditIcon fontSize="small" />
           </IconButton>
-          <IconButton size="small" color="error" onClick={() => { setSelected(params.row); setDeleteDialogOpen(true); }}>
-            <DeleteIcon fontSize="small" />
-          </IconButton>
+          <Tooltip
+            title={
+              (params.row.product_count ?? 0) > 0
+                ? 'Неможливо видалити: у каталозі є товари цієї категорії'
+                : 'Видалити категорію'
+            }
+          >
+            <span>
+              <IconButton
+                size="small"
+                color="error"
+                disabled={(params.row.product_count ?? 0) > 0}
+                onClick={() => {
+                  deleteMutation.reset();
+                  setSelected(params.row);
+                  setDeleteDialogOpen(true);
+                }}
+              >
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
         </Box>
       ),
     },
@@ -92,9 +122,14 @@ export default function CategoriesPage() {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h5" fontWeight={600}>Категорії</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpen()}>
-          Додати
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button variant="outlined" startIcon={<PrintIcon />} onClick={handlePrintReport}>
+            Звіт
+          </Button>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpen()}>
+            Додати
+          </Button>
+        </Box>
       </Box>
 
       <TextField
@@ -110,7 +145,7 @@ export default function CategoriesPage() {
 
       <Box sx={{ bgcolor: 'white', borderRadius: 2, overflow: 'hidden' }}>
         <DataGrid
-          rows={filtered}
+          rows={categories}
           columns={columns}
           getRowId={(row) => row.category_number}
           loading={isLoading}
@@ -145,18 +180,38 @@ export default function CategoriesPage() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => {
+          deleteMutation.reset();
+          setDeleteDialogOpen(false);
+        }}
+      >
         <DialogTitle>Видалити категорію?</DialogTitle>
         <DialogContent>
-          <Typography>
+          <Typography gutterBottom>
             Видалити категорію <strong>{selected?.category_name}</strong>?
-            Всі товари цієї категорії також будуть видалені.
           </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            Поки в каталозі є хоча б один товар цієї категорії, видалити її неможливо. Спочатку видаліть товари
+            або перенесіть їх в іншу категорію.
+          </Typography>
+          {deleteMutation.isError ? (
+            <Alert severity="error">{getApiErrorMessage(deleteMutation.error)}</Alert>
+          ) : null}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Скасувати</Button>
           <Button
-            color="error" variant="contained"
+            onClick={() => {
+              deleteMutation.reset();
+              setDeleteDialogOpen(false);
+            }}
+          >
+            Скасувати
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
             onClick={() => selected && deleteMutation.mutate(selected.category_number)}
             disabled={deleteMutation.isPending}
           >

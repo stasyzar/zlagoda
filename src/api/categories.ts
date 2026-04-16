@@ -2,7 +2,14 @@ import apiClient from './client';
 import { type Category } from '../types';
 
 export const getCategories = async (): Promise<Category[]> => {
-  const { data } = await apiClient.get('/categories');
+  const { data } = await apiClient.get('/categories/sorted-by-name');
+  return data;
+};
+
+export const getCategoriesByQuery = async (search?: string): Promise<Category[]> => {
+  const { data } = search?.trim()
+    ? await apiClient.get(`/categories/search-by-name/${encodeURIComponent(search.trim())}`)
+    : await apiClient.get('/categories/sorted-by-name');
   return data;
 };
 

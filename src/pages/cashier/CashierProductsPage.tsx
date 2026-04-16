@@ -1,28 +1,37 @@
 import { useState } from 'react';
 import {
   Box, Typography, TextField, InputAdornment,
-  Alert, MenuItem, ToggleButton, ToggleButtonGroup, Chip
+  Alert, MenuItem, Button,
 } from '@mui/material';
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import { Search as SearchIcon } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
-import { getStoreProducts } from '../../api/storeProducts';
-import { getProducts } from '../../api/products';
+import {
+  getProductsSortedByName,
+  getProductsByCategorySortedByName,
+  searchProductsByName,
+} from '../../api/products';
 import { getCategories } from '../../api/categories';
+import { type Product } from '../../types';
 
 export default function CashierProductsPage() {
-  const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState<'all' | 'by-category' | 'search'>('all');
+  const [searchInput, setSearchInput] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<number | ''>('');
-  const [filter, setFilter] = useState<'all' | 'promo' | 'regular'>('all');
+  const [appliedCategory, setAppliedCategory] = useState<number | ''>('');
+  const [appliedQuery, setAppliedQuery] = useState('');
 
-  const { data: storeProducts = [], isLoading, error } = useQuery({
-    queryKey: ['store-products'],
-    queryFn: getStoreProducts,
-  });
-
-  const { data: products = [] } = useQuery({
-    queryKey: ['products'],
-    queryFn: getProducts,
+  const { data: products = [], isLoading, error } = useQuery({
+    queryKey: ['cashier-products-page', viewMode, appliedCategory, appliedQuery],
+    queryFn: async () => {
+      if (viewMode === 'by-category') return getProductsByCategorySortedByName(Number(appliedCategory));
+      if (viewMode === 'search') return searchProductsByName(appliedQuery);
+      return getProductsSortedByName();
+    },
+    enabled:
+      viewMode === 'all'
+      || (viewMode === 'by-category' && appliedCategory !== '')
+      || (viewMode === 'search' && Boolean(appliedQuery.trim())),
   });
 
   const { data: categories = [] } = useQuery({
@@ -30,82 +39,120 @@ export default function CashierProductsPage() {
     queryFn: getCategories,
   });
 
-  const getProductName = (id: number) => products.find((p) => p.id_product === id)?.product_name ?? '';
-  const getCategoryNumber = (id: number) => products.find((p) => p.id_product === id)?.category_number;
-
-  const filtered = storeProducts
-    .filter((sp) => getProductName(sp.id_product).toLowerCase().includes(search.toLowerCase()))
-    .filter((sp) => categoryFilter === '' || getCategoryNumber(sp.id_product) === categoryFilter)
-    .filter((sp) => {
-      if (filter === 'promo') return sp.promotional_product;
-      if (filter === 'regular') return !sp.promotional_product;
-      return true;
-    });
+  const applyFilters = () => {
+    if (viewMode === 'by-category') {
+      if (categoryFilter === '') return;
+      setAppliedCategory(Number(categoryFilter));
+    }
+    if (viewMode === 'search') {
+      if (!searchInput.trim()) return;
+      setAppliedQuery(searchInput.trim());
+    }
+  };
 
   const columns: GridColDef[] = [
-    { field: 'UPC', headerName: 'UPC', width: 130 },
+    { field: 'id_product', headerName: 'ID', width: 70, sortable: false, filterable: false },
+    { field: 'product_name', headerName: 'Назва', flex: 1, sortable: false, filterable: false },
+    { field: 'producer', headerName: 'Виробник', width: 140, sortable: false, filterable: false },
     {
-      field: 'id_product', headerName: 'Назва', flex: 1,
-      renderCell: (params) => getProductName(params.value),
+      field: 'category_number', headerName: 'Категорія', width: 150, sortable: false, filterable: false,
+      renderCell: (params) =>
+        categories.find((c) => c.category_number === params.value)?.category_name ?? params.value,
     },
-    {
-      field: 'selling_price', headerName: 'Ціна', width: 110,
-      renderCell: (params) => `${params.value} грн`,
-    },
-    { field: 'products_number', headerName: 'К-сть', width: 80 },
-    {
-      field: 'promotional_product', headerName: 'Тип', width: 110,
-      renderCell: (params) => (
-        <Chip
-          label={params.value ? 'Акційний' : 'Звичайний'}
-          color={params.value ? 'warning' : 'default'}
-          size="small"
-        />
-      ),
-    },
+    { field: 'characteristics', headerName: 'Характеристики', flex: 1, sortable: false, filterable: false },
   ];
 
   if (error) return <Alert severity="error">Помилка завантаження</Alert>;
 
   return (
     <Box>
-      <Typography variant="h5" fontWeight={600} mb={3}>Товари у магазині</Typography>
+      <Typography variant="h5" fontWeight={600} mb={3}>Товари (каталог)</Typography>
+
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+        <Button
+          variant={viewMode === 'all' ? 'contained' : 'outlined'}
+          size="small"
+          onClick={() => {
+            setViewMode('all');
+            setAppliedCategory('');
+            setAppliedQuery('');
+          }}
+        >
+          Усі за назвою
+        </Button>
+        <Button
+          variant={viewMode === 'by-category' ? 'contained' : 'outlined'}
+          size="small"
+          onClick={() => {
+            setViewMode('by-category');
+            setAppliedCategory('');
+          }}
+        >
+          За категорією
+        </Button>
+        <Button
+          variant={viewMode === 'search' ? 'contained' : 'outlined'}
+          size="small"
+          onClick={() => {
+            setViewMode('search');
+            setAppliedQuery('');
+          }}
+        >
+          Пошук за назвою
+        </Button>
+      </Box>
 
       <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-        <TextField
-          placeholder="Пошук за назвою..."
-          value={search} onChange={(e) => setSearch(e.target.value)}
-          size="small" sx={{ width: 280 }}
-          InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }}
-        />
-        <TextField
-          select label="Категорія" size="small" sx={{ width: 200 }}
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value === '' ? '' : Number(e.target.value))}
-        >
-          <MenuItem value="">Всі категорії</MenuItem>
-          {categories.map((c) => (
-            <MenuItem key={c.category_number} value={c.category_number}>{c.category_name}</MenuItem>
-          ))}
-        </TextField>
-        <ToggleButtonGroup
-          value={filter} exclusive size="small"
-          onChange={(_, val) => val && setFilter(val)}
-        >
-          <ToggleButton value="all">Всі</ToggleButton>
-          <ToggleButton value="promo">Акційні</ToggleButton>
-          <ToggleButton value="regular">Звичайні</ToggleButton>
-        </ToggleButtonGroup>
+        {viewMode === 'search' ? (
+          <TextField
+            placeholder="Пошук за назвою..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            size="small"
+            sx={{ width: 280 }}
+            InputProps={{
+              startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment>,
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') applyFilters();
+            }}
+          />
+        ) : null}
+        {viewMode === 'by-category' ? (
+          <TextField
+            select
+            label="Категорія"
+            size="small"
+            sx={{ width: 220 }}
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value === '' ? '' : Number(e.target.value))}
+          >
+            <MenuItem value="">Оберіть…</MenuItem>
+            {categories.map((c) => (
+              <MenuItem key={c.category_number} value={c.category_number}>{c.category_name}</MenuItem>
+            ))}
+          </TextField>
+        ) : null}
+        {viewMode === 'by-category' || viewMode === 'search' ? (
+          <Button variant="outlined" size="small" onClick={applyFilters}>
+            Застосувати
+          </Button>
+        ) : null}
       </Box>
 
       <Box sx={{ bgcolor: 'white', borderRadius: 2, overflow: 'hidden' }}>
-        <DataGrid
-          rows={filtered} columns={columns}
-          getRowId={(row) => row.UPC}
-          loading={isLoading} autoHeight
+        <DataGrid<Product>
+          rows={products}
+          columns={columns}
+          getRowId={(row) => row.id_product}
+          loading={isLoading}
+          autoHeight
           pageSizeOptions={[10, 25, 50]}
           initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
           disableRowSelectionOnClick
+          disableColumnMenu
+          disableColumnFilter
+          disableColumnSorting
         />
       </Box>
     </Box>

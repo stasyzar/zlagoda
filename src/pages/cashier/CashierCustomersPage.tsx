@@ -8,7 +8,7 @@ import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import { Search as SearchIcon, Edit as EditIcon, Add as AddIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { getCustomers, createCustomer, updateCustomer } from '../../api/customers';
+import { getCustomersByQuery, createCustomer, updateCustomer } from '../../api/customers';
 import { type CustomerCard } from '../../types';
 
 export default function CashierCustomersPage() {
@@ -20,8 +20,8 @@ export default function CashierCustomersPage() {
   const { register, handleSubmit, reset, formState: { errors } } = useForm<CustomerCard>();
 
   const { data: customers = [], isLoading, error } = useQuery({
-    queryKey: ['customers'],
-    queryFn: getCustomers,
+    queryKey: ['customers', search],
+    queryFn: () => getCustomersByQuery({ surname: search || undefined }),
   });
 
   const createMutation = useMutation({
@@ -47,10 +47,6 @@ export default function CashierCustomersPage() {
     if (selected) updateMutation.mutate({ id: selected.card_number, data: payload });
     else createMutation.mutate(payload);
   };
-
-  const filtered = customers.filter((c) =>
-    c.cust_surname.toLowerCase().includes(search.toLowerCase())
-  );
 
   const columns: GridColDef[] = [
     { field: 'card_number', headerName: 'Номер карти', width: 130 },
@@ -89,7 +85,7 @@ export default function CashierCustomersPage() {
 
       <Box sx={{ bgcolor: 'white', borderRadius: 2, overflow: 'hidden' }}>
         <DataGrid
-          rows={filtered} columns={columns}
+          rows={customers} columns={columns}
           getRowId={(row) => row.card_number}
           loading={isLoading} autoHeight
           pageSizeOptions={[10, 25, 50]}

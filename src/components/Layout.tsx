@@ -11,6 +11,8 @@ import {
   Storefront as StorefrontIcon,
   CardMembership as CardMembershipIcon,
   Receipt as ReceiptIcon,
+  Assessment as AssessmentIcon,
+  AccountCircle as AccountCircleIcon,
   Logout as LogoutIcon,
   Menu as MenuIcon,
 } from '@mui/icons-material';
@@ -19,15 +21,18 @@ import { useAuth } from '../context/AuthContext';
 const DRAWER_WIDTH = 240;
 
 const managerLinks = [
+  { label: 'Мій профіль', icon: <AccountCircleIcon />, path: '/manager/me' },
   { label: 'Працівники', icon: <PeopleIcon />, path: '/manager/employees' },
   { label: 'Категорії', icon: <CategoryIcon />, path: '/manager/categories' },
   { label: 'Товари', icon: <InventoryIcon />, path: '/manager/products' },
   { label: 'Товари у магазині', icon: <StorefrontIcon />, path: '/manager/store-products' },
   { label: 'Карти клієнтів', icon: <CardMembershipIcon />, path: '/manager/customers' },
   { label: 'Чеки', icon: <ReceiptIcon />, path: '/manager/checks' },
+  { label: 'Звіти', icon: <AssessmentIcon />, path: '/manager/reports' },
 ];
 
 const cashierLinks = [
+  { label: 'Мій профіль', icon: <AccountCircleIcon />, path: '/cashier/me' },
   { label: 'Товари', icon: <InventoryIcon />, path: '/cashier/products' },
   { label: 'Товари у магазині', icon: <StorefrontIcon />, path: '/cashier/store-products' },
   { label: 'Карти клієнтів', icon: <CardMembershipIcon />, path: '/cashier/customers' },

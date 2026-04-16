@@ -1,57 +1,80 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Box, Button, TextField, Typography, Paper, Alert, CircularProgress
+  Box,
+  Button,
+  TextField,
+  Typography,
+  Paper,
+  Alert,
+  CircularProgress,
+  Snackbar,
+  InputAdornment,
 } from '@mui/material';
+import { ErrorOutline as ErrorOutlineIcon, Person as PersonIcon, Lock as LockIcon } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
-// import { loginRequest } from '../api/auth';
+import { loginRequest } from '../api/auth';
+import { getApiErrorMessage } from '../utils/apiError';
 
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const [id, setId] = useState('');
   const [password, setPassword] = useState('');
-//   const [error, setError] = useState('');
-//   const [loading, setLoading] = useState(false);
-  const [error] = useState('');
-  const [loading] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-//   const handleSubmit = async () => {
-//   login({ id_employee: 'M001', role: 'Manager', token: 'mock-token' });
-//   navigate('/manager/employees');
-// };
+  const clearError = () => setError('');
 
- const handleSubmit = async () => {
-    if (id.toLowerCase() === 'cashier') {
-      login({ id_employee: 'C001', role: 'Cashier', token: 'mock-token-cashier' });
-      navigate('/cashier/products');
-    } else {
-      login({ id_employee: 'M001', role: 'Manager', token: 'mock-token-manager' });
-      navigate('/manager/employees');
+  const handleSubmit = async () => {
+    clearError();
+    setLoading(true);
+    try {
+      const user = await loginRequest(id, password);
+      login(user);
+      navigate(user.role === 'Manager' ? '/manager/employees' : '/cashier/products');
+    } catch (e) {
+      const msg = getApiErrorMessage(e, 'Невірний ID або пароль');
+      setError(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
-//   const handleSubmit = async () => {
-//     setError('');
-//     setLoading(true);
-//     try {
-//       const user = await loginRequest(id, password);
-//       login(user);
-//       navigate(user.role === 'Manager' ? '/manager/employees' : '/cashier/products');
-//     } catch {
-//       setError('Невірний ID або пароль');
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
   return (
     <Box sx={{
-      height: '100vh', display: 'flex',
-      alignItems: 'center', justifyContent: 'center',
-      bgcolor: '#f5f5f5'
-    }}>
-      <Paper sx={{ p: 4, width: 360, borderRadius: 3 }} elevation={3}>
+        height: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        bgcolor: '#f5f5f5',
+      }}
+    >
+      <Snackbar
+        open={!!error}
+        autoHideDuration={8000}
+        onClose={clearError}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        sx={{ mt: 2 }}
+      >
+        <Alert
+          severity="error"
+          variant="filled"
+          icon={<ErrorOutlineIcon />}
+          onClose={clearError}
+          elevation={6}
+          sx={{
+            alignItems: 'center',
+            minWidth: { xs: '90vw', sm: 380 },
+            borderRadius: 2,
+            '& .MuiAlert-message': { fontWeight: 500 },
+          }}
+        >
+          {error}
+        </Alert>
+      </Snackbar>
+
+      <Paper sx={{ p: 4, width: 360, maxWidth: '92vw', borderRadius: 3 }} elevation={3}>
         <Typography variant="h5" fontWeight={600} mb={1}>
           ZLAGODA
         </Typography>
@@ -59,13 +82,22 @@ export default function LoginPage() {
           Увійдіть у свій акаунт
         </Typography>
 
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
         <TextField
           label="ID працівника"
           fullWidth
           value={id}
-          onChange={(e) => setId(e.target.value)}
+          onChange={(e) => {
+            setId(e.target.value);
+            if (error) clearError();
+          }}
+          error={!!error}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <PersonIcon color={error ? 'error' : 'action'} fontSize="small" />
+              </InputAdornment>
+            ),
+          }}
           sx={{ mb: 2 }}
         />
         <TextField
@@ -73,7 +105,18 @@ export default function LoginPage() {
           type="password"
           fullWidth
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            if (error) clearError();
+          }}
+          error={!!error}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <LockIcon color={error ? 'error' : 'action'} fontSize="small" />
+              </InputAdornment>
+            ),
+          }}
           onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
           sx={{ mb: 3 }}
         />
