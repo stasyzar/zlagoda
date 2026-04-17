@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Box, Button, Typography, TextField, InputAdornment,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  IconButton, Alert, CircularProgress, MenuItem, Tooltip,
+  IconButton, Alert, CircularProgress, Tooltip,
 } from '@mui/material';
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import {
@@ -14,12 +14,9 @@ import {
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { AxiosError } from 'axios';
 import {
   getCustomersSortedBySurname,
-  getCustomersSortedByPercent,
-  searchCustomersBySurname,
-  getCustomersByPercentSortedBySurname,
+  getCustomersByQuery,
   getCustomers,
   createCustomer,
   updateCustomer,
@@ -28,27 +25,30 @@ import {
 import { type CustomerCard } from '../../types';
 import { openReportPreview } from '../../utils/reportPrint';
 import { getApiErrorMessage } from '../../utils/apiError';
+import { MAX_NAME_LEN, PHONE_HINT, PHONE_PATTERN } from '../../utils/validation';
 
-const PHONE_PATTERN = /^\+?[0-9]{1,12}$/;
-const PHONE_HINT = 'Формат: +XXXXXXXXXXXX (до 12 цифр)';
-
-function getApiError(err: unknown): string {
-  if (err instanceof AxiosError) {
-    const d = err.response?.data;
-    if (d?.validationErrors) {
-      return Object.values(d.validationErrors as Record<string, string>).join('; ');
-    }
-    return d?.message || 'Помилка сервера';
+function getFriendlyCustomerError(err: unknown): string {
+  const raw = getApiErrorMessage(err, 'Операцію не виконано.');
+  const low = raw.toLowerCase();
+  if (low.includes('phone') || low.includes('телефон')) {
+    return 'Перевірте номер телефону. Формат: + і 1–12 цифр.';
   }
-  return 'Невідома помилка';
+  if (low.includes('percent') || low.includes('відсот')) {
+    return 'Відсоток знижки має бути від 0 до 100.';
+  }
+  if (low.includes('card') || low.includes('карт')) {
+    return 'Перевірте номер картки: він може бути зайнятий або некоректний.';
+  }
+  return 'Не вдалося виконати дію. Перевірте дані та спробуйте ще раз.';
 }
 
 export default function CustomerCardsPage() {
   const queryClient = useQueryClient();
-  const [viewMode, setViewMode] = useState<'all-surname' | 'all-percent' | 'search-surname' | 'by-percent'>('all-surname');
+  const [viewMode, setViewMode] = useState<'all-surname' | 'search-surname' | 'by-percent'>('all-surname');
   const [searchInput, setSearchInput] = useState('');
   const [appliedSurname, setAppliedSurname] = useState('');
-  const [percentFilter, setPercentFilter] = useState<number | ''>('');
+  const [percentInput, setPercentInput] = useState('');
+  const [appliedPercent, setAppliedPercent] = useState<number | ''>('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selected, setSelected] = useState<CustomerCard | null>(null);
@@ -57,30 +57,28 @@ export default function CustomerCardsPage() {
   const { register, handleSubmit, reset, formState: { errors } } = useForm<CustomerCard>();
 
   const { data: cards = [], isLoading, error } = useQuery({
-    queryKey: ['customer-cards-page', viewMode, appliedSurname, percentFilter],
+    queryKey: ['customer-cards-page', viewMode, appliedSurname, appliedPercent],
     queryFn: async () => {
-      if (viewMode === 'all-percent') return getCustomersSortedByPercent();
-      if (viewMode === 'search-surname') return searchCustomersBySurname(appliedSurname);
-      if (viewMode === 'by-percent') return getCustomersByPercentSortedBySurname(Number(percentFilter));
+      if (viewMode === 'search-surname') return getCustomersByQuery({ surname: appliedSurname });
+      if (viewMode === 'by-percent') return getCustomersByQuery({ percent: Number(appliedPercent) });
       return getCustomersSortedBySurname();
     },
     enabled:
       viewMode === 'all-surname' ||
-      viewMode === 'all-percent' ||
       (viewMode === 'search-surname' && Boolean(appliedSurname.trim())) ||
-      (viewMode === 'by-percent' && percentFilter !== ''),
+      (viewMode === 'by-percent' && appliedPercent !== ''),
   });
 
   const createMutation = useMutation({
     mutationFn: createCustomer,
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['customer-cards'] }); handleClose(); },
-    onError: (err) => setApiError(getApiError(err)),
+    onError: (err) => setApiError(getFriendlyCustomerError(err)),
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ cardNumber, data }: { cardNumber: string; data: Partial<CustomerCard> }) => updateCustomer(cardNumber, data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['customer-cards'] }); handleClose(); },
-    onError: (err) => setApiError(getApiError(err)),
+    onError: (err) => setApiError(getFriendlyCustomerError(err)),
   });
 
   const deleteMutation = useMutation({
@@ -131,12 +129,21 @@ export default function CustomerCardsPage() {
       setApiError('Введи прізвище для пошуку.');
       return;
     }
-    if (viewMode === 'by-percent' && percentFilter === '') {
-      setApiError('Обери відсоток для цього режиму.');
+    if (viewMode === 'by-percent' && !percentInput.trim()) {
+      setApiError('Вкажи відсоток від 0 до 100.');
+      return;
+    }
+    const parsedPercent = Number(percentInput);
+    if (
+      viewMode === 'by-percent'
+      && (!Number.isFinite(parsedPercent) || parsedPercent < 0 || parsedPercent > 100)
+    ) {
+      setApiError('Відсоток має бути в межах 0–100.');
       return;
     }
     setApiError('');
     setAppliedSurname(searchInput.trim());
+    if (viewMode === 'by-percent') setAppliedPercent(parsedPercent);
   };
 
   const columns: GridColDef[] = [
@@ -203,16 +210,34 @@ export default function CustomerCardsPage() {
       {apiError ? <Alert severity="error" sx={{ mb: 2 }}>{apiError}</Alert> : null}
 
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
-        <Button variant={viewMode === 'all-surname' ? 'contained' : 'outlined'} onClick={() => { setViewMode('all-surname'); setApiError(''); }}>
+        <Button
+          size="small"
+          variant={viewMode === 'all-surname' ? 'contained' : 'outlined'}
+          onClick={() => {
+            setViewMode('all-surname');
+            setApiError('');
+          }}
+        >
           Усі клієнти (за прізвищем)
         </Button>
-        <Button variant={viewMode === 'all-percent' ? 'contained' : 'outlined'} onClick={() => { setViewMode('all-percent'); setApiError(''); }}>
-          Усі клієнти (за відсотком)
-        </Button>
-        <Button variant={viewMode === 'search-surname' ? 'contained' : 'outlined'} onClick={() => { setViewMode('search-surname'); setApiError(''); }}>
+        <Button
+          size="small"
+          variant={viewMode === 'search-surname' ? 'contained' : 'outlined'}
+          onClick={() => {
+            setViewMode('search-surname');
+            setApiError('');
+          }}
+        >
           Пошук за прізвищем
         </Button>
-        <Button variant={viewMode === 'by-percent' ? 'contained' : 'outlined'} onClick={() => { setViewMode('by-percent'); setApiError(''); }}>
+        <Button
+          size="small"
+          variant={viewMode === 'by-percent' ? 'contained' : 'outlined'}
+          onClick={() => {
+            setViewMode('by-percent');
+            setApiError('');
+          }}
+        >
           Клієнти з певним відсотком
         </Button>
       </Box>
@@ -232,19 +257,26 @@ export default function CustomerCardsPage() {
         ) : null}
         {viewMode === 'by-percent' ? (
           <TextField
-            select size="small" sx={{ width: 220 }}
-            value={percentFilter}
-            onChange={(e) => setPercentFilter(e.target.value === '' ? '' : Number(e.target.value))}
-            label="Відсоток"
-          >
-            <MenuItem value="">—</MenuItem>
-            {[0, 5, 10, 15, 20].map((p) => (
-              <MenuItem key={p} value={p}>{p}%</MenuItem>
-            ))}
-          </TextField>
+            size="small"
+            sx={{ width: 180 }}
+            type="number"
+            inputProps={{ min: 0, max: 100, step: 1 }}
+            value={percentInput}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (!next) {
+                setPercentInput('');
+                return;
+              }
+              const n = Number(next);
+              if (Number.isFinite(n) && n <= 100) setPercentInput(next);
+            }}
+            label="Відсоток (0–100)"
+            helperText="0..100"
+          />
         ) : null}
         {(viewMode === 'search-surname' || viewMode === 'by-percent') ? (
-          <Button variant="contained" onClick={applyFilters}>Застосувати</Button>
+          <Button size="small" variant="contained" onClick={applyFilters}>Застосувати</Button>
         ) : null}
       </Box>
 
@@ -280,16 +312,24 @@ export default function CustomerCardsPage() {
             <Box sx={{ display: 'flex', gap: 2 }}>
               <TextField
                 label="Прізвище" fullWidth size="small"
+                inputProps={{ maxLength: MAX_NAME_LEN }}
                 {...register('cust_surname', { required: "Обов'язкове поле" })}
                 error={!!errors.cust_surname}
               />
               <TextField
                 label="Ім'я" fullWidth size="small"
+                inputProps={{ maxLength: MAX_NAME_LEN }}
                 {...register('cust_name', { required: "Обов'язкове поле" })}
                 error={!!errors.cust_name}
               />
             </Box>
-            <TextField label="По батькові" fullWidth size="small" {...register('cust_patronymic')} />
+            <TextField
+              label="По батькові"
+              fullWidth
+              size="small"
+              inputProps={{ maxLength: MAX_NAME_LEN }}
+              {...register('cust_patronymic')}
+            />
             <TextField
               label="Відсоток знижки" fullWidth size="small" type="number"
               {...register('percent', { required: "Обов'язкове поле", min: 0, max: 100 })}
@@ -306,8 +346,8 @@ export default function CustomerCardsPage() {
               helperText={errors.phone_number?.message ?? PHONE_HINT}
             />
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <TextField label="Місто" fullWidth size="small" {...register('city')} />
-              <TextField label="Вулиця" fullWidth size="small" {...register('street')} />
+              <TextField label="Місто" fullWidth size="small" inputProps={{ maxLength: MAX_NAME_LEN }} {...register('city')} />
+              <TextField label="Вулиця" fullWidth size="small" inputProps={{ maxLength: MAX_NAME_LEN }} {...register('street')} />
               <TextField label="Індекс" fullWidth size="small" {...register('zip_code')} />
             </Box>
           </Box>

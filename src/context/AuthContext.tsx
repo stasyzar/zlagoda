@@ -1,10 +1,11 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
-import { type AuthUser } from '../types';
+import { type AppRole, type AuthUser } from '../types';
 
 interface AuthContextType {
   user: AuthUser | null;
   login: (user: AuthUser) => void;
   logout: () => void;
+  role: AppRole | null;
   isManager: boolean;
   isCashier: boolean;
 }
@@ -33,6 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       login,
       logout,
+      role: user?.role ?? null,
       isManager: user?.role === 'Manager',
       isCashier: user?.role === 'Cashier',
     }}>

@@ -22,8 +22,9 @@ import {
   updateStoreProduct,
   deleteStoreProduct,
 } from '../../api/storeProducts';
-import { getProducts, getProductById } from '../../api/products';
-import { type StoreProduct } from '../../types';
+import { getProducts } from '../../api/products';
+import type { StoreProductListRow, StoreProductRequestPayload } from '../../types';
+import { MAX_UPC_LEN } from '../../utils/validation';
 import { openReportPreview } from '../../utils/reportPrint';
 import { getApiErrorMessage } from '../../utils/apiError';
 
@@ -35,21 +36,37 @@ export default function StoreProductsPage() {
   const [appliedSearch, setAppliedSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [selected, setSelected] = useState<StoreProduct | null>(null);
+  const [selected, setSelected] = useState<StoreProductListRow | null>(null);
   const [apiError, setApiError] = useState('');
 
-  const { register, handleSubmit, reset, control, watch, formState: { errors } } = useForm<StoreProduct>();
+  const { register, handleSubmit, reset, control, watch, formState: { errors } } = useForm<StoreProductListRow>();
   const watchIdProduct = watch('id_product');
   const watchPromo = watch('promotional_product');
   const idProductNum = typeof watchIdProduct === 'number' ? watchIdProduct : Number(watchIdProduct);
-  const promoCreateBlocked =
-    !selected && Boolean(watchPromo) && Number.isFinite(idProductNum) && idProductNum > 0;
 
-  const { data: productCaps, isFetching: capsLoading } = useQuery({
-    queryKey: ['product', idProductNum, 'caps'],
-    queryFn: () => getProductById(idProductNum),
-    enabled: dialogOpen && promoCreateBlocked,
-  });
+  function getFriendlyStoreProductError(err: unknown): string {
+    const raw = getApiErrorMessage(err, 'Не вдалося зберегти товар у магазині.');
+    const low = raw.toLowerCase();
+    if (low.includes('акційна позиція для товару') && low.includes('вже існує')) {
+      return raw;
+    }
+    if (low.includes('використовуйте upc')) {
+      return raw;
+    }
+    if (low.includes('для цього продукту вже існує')) {
+      return raw;
+    }
+    if (low.includes('upc') && low.includes('вже існує')) {
+      return 'Такий UPC вже існує. Перевірте UPC або відкрийте існуючу позицію для редагування.';
+    }
+    if (low.includes('не знайдено')) {
+      return 'Не вдалося знайти товар. Оновіть список і спробуйте ще раз.';
+    }
+    if (low.includes('пов’язані записи в базі даних') || low.includes("пов'язані записи в базі даних")) {
+      return 'Цей UPC не можна використати для такої операції через конфлікт пов’язаних даних. Спробуйте інший UPC або відредагуйте існуючу позицію.';
+    }
+    return raw;
+  }
 
   const { data: storeProducts = [], isLoading, error } = useQuery({
     queryKey: ['store-products-page', listFilter, sortMode, appliedSearch],
@@ -59,11 +76,19 @@ export default function StoreProductsPage() {
       return getStoreProductsList(listFilter, sortMode);
     },
   });
+  const { data: allStoreProducts = [] } = useQuery({
+    queryKey: ['store-products-page', 'all-for-validation'],
+    queryFn: () => getStoreProductsList('all', 'name'),
+  });
 
   const { data: products = [] } = useQuery({
     queryKey: ['products'],
     queryFn: getProducts,
   });
+  const regularForCurrentProduct = allStoreProducts.find(
+    (sp) => !sp.promotional_product && sp.id_product === idProductNum,
+  );
+  const creatingPromoWithKnownRegular = !selected && Boolean(watchPromo) && Boolean(regularForCurrentProduct);
 
   const createMutation = useMutation({
     mutationFn: createStoreProduct,
@@ -72,17 +97,17 @@ export default function StoreProductsPage() {
       queryClient.invalidateQueries({ queryKey: ['store-products-page'] });
       handleClose();
     },
-    onError: (err) => setApiError(getApiErrorMessage(err)),
+    onError: (err) => setApiError(getFriendlyStoreProductError(err)),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ upc, data }: { upc: string; data: Partial<StoreProduct> }) => updateStoreProduct(upc, data),
+    mutationFn: ({ upc, data }: { upc: string; data: StoreProductRequestPayload }) => updateStoreProduct(upc, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['store-products'] });
       queryClient.invalidateQueries({ queryKey: ['store-products-page'] });
       handleClose();
     },
-    onError: (err) => setApiError(getApiErrorMessage(err)),
+    onError: (err) => setApiError(getFriendlyStoreProductError(err)),
   });
 
   const deleteMutation = useMutation({
@@ -100,7 +125,7 @@ export default function StoreProductsPage() {
     setAppliedSearch(searchInput.trim());
   };
 
-  const handleOpen = (product?: StoreProduct) => {
+  const handleOpen = (product?: StoreProductListRow) => {
     setApiError('');
     if (product) { setSelected(product); reset(product); }
     else { setSelected(null); reset({ promotional_product: false }); }
@@ -109,18 +134,48 @@ export default function StoreProductsPage() {
 
   const handleClose = () => { setDialogOpen(false); setSelected(null); reset({}); };
 
-  const onSubmit = (data: StoreProduct) => {
+  const onSubmit = async (data: StoreProductListRow) => {
     setApiError('');
     const isPromo = Boolean(data.promotional_product);
-    const payload = {
-      ...data,
-      upc_prom: undefined,
-      selling_price: isPromo ? undefined : Number(data.selling_price),
+    const normalizedUpc = data.upc.trim();
+    const normalizedProductId = Number(data.id_product);
+    let validationList = allStoreProducts;
+    try {
+      validationList = await getStoreProductsList('all', 'name');
+    } catch {
+      // fallback to cached list
+    }
+
+    if (!selected) {
+      const existingPromoForProduct = validationList.find(
+        (sp) => sp.promotional_product && sp.id_product === normalizedProductId,
+      );
+      if (isPromo && existingPromoForProduct) {
+        setApiError(
+          `Акційна позиція для товару ${normalizedProductId} вже існує (UPC: ${existingPromoForProduct.upc})`,
+        );
+        return;
+      }
+
+      const occupiedByUpc = validationList.find((sp) => sp.upc === normalizedUpc);
+      if (occupiedByUpc && !isPromo && occupiedByUpc.promotional_product) {
+        setApiError(
+          `Цей UPC (${normalizedUpc}) вже зайнятий акційною позицією. Для звичайного товару використайте інший UPC.`,
+        );
+        return;
+      }
+    }
+
+    const promoNeedsManualPrice = isPromo && !selected && !regularForCurrentProduct;
+    const payload: StoreProductRequestPayload = {
+      upc: normalizedUpc,
+      id_product: normalizedProductId,
       products_number: Number(data.products_number),
       promotional_product: isPromo,
+      selling_price: promoNeedsManualPrice ? Number(data.selling_price) : (isPromo ? undefined : Number(data.selling_price)),
     };
-    if (selected) updateMutation.mutate({ upc: selected.upc, data: payload as any });
-    else createMutation.mutate(payload as any);
+    if (selected) updateMutation.mutate({ upc: selected.upc, data: payload });
+    else createMutation.mutate(payload);
   };
 
   const handlePrintReport = () => {
@@ -129,15 +184,15 @@ export default function StoreProductsPage() {
         openReportPreview(
           'Звіт: Товари у магазині',
           [
-            { header: 'UPC', getValue: (p: StoreProduct) => p.upc },
+            { header: 'UPC', getValue: (p: StoreProductListRow) => p.upc },
             {
               header: 'Товар',
-              getValue: (p: StoreProduct) =>
+              getValue: (p: StoreProductListRow) =>
                 p.product_name ?? catalog.find((x) => x.id_product === p.id_product)?.product_name ?? p.id_product,
             },
-            { header: 'Ціна', getValue: (p: StoreProduct) => p.selling_price },
-            { header: 'Кількість', getValue: (p: StoreProduct) => p.products_number },
-            { header: 'Тип', getValue: (p: StoreProduct) => (p.promotional_product ? 'Акційний' : 'Звичайний') },
+            { header: 'Ціна', getValue: (p: StoreProductListRow) => p.selling_price },
+            { header: 'Кількість', getValue: (p: StoreProductListRow) => p.products_number },
+            { header: 'Тип', getValue: (p: StoreProductListRow) => (p.promotional_product ? 'Акційний' : 'Звичайний') },
           ],
           reportRows,
           'Усі позиції, відсортовані за назвою товару (вимога звіту)',
@@ -290,7 +345,8 @@ export default function StoreProductsPage() {
             <TextField
               label="UPC" fullWidth size="small"
               disabled={!!selected}
-              {...register('upc', { required: "Обов'язкове поле" })}
+              inputProps={{ maxLength: MAX_UPC_LEN }}
+              {...register('upc', { required: "Обов'язкове поле", maxLength: MAX_UPC_LEN })}
               error={!!errors.upc}
               helperText={
                 errors.upc?.message
@@ -321,20 +377,21 @@ export default function StoreProductsPage() {
                 disabled
                 helperText="Для акційного UPC ціна лише від звичайного (×0.8), змінюється на бекенді"
               />
-            ) : !selected && watchPromo ? (
+            ) : creatingPromoWithKnownRegular ? (
               <TextField
                 label="Ціна продажу (грн)"
                 fullWidth
                 size="small"
-                value="—"
+                value={Number(regularForCurrentProduct!.selling_price * 0.8).toFixed(2)}
                 disabled
-                helperText="Для нового акційного UPC ціна обчислюється автоматично (звичайний × 0.8)"
+                helperText="Для нового акційного UPC ціна буде розрахована автоматично від звичайного товару (×0.8)."
               />
             ) : (
               <TextField
                 label="Ціна продажу (грн)" fullWidth size="small" type="number"
                 {...register('selling_price', { required: "Обов'язкове поле", min: 0 })}
                 error={!!errors.selling_price}
+                helperText={watchPromo && !selected ? 'Для акційного товару без пари введіть ціну вручну.' : undefined}
               />
             )}
             <TextField
@@ -355,7 +412,7 @@ export default function StoreProductsPage() {
                   helperText={
                     selected
                       ? 'Тип не змінюється після створення'
-                      : 'Акційний: спочатку має бути звичайний UPC цього товару в магазині; ціна = ×0.8'
+                      : 'Акційний: якщо є звичайний UPC, ціна рахується автоматично (×0.8). Якщо пари ще немає — введіть ціну вручну.'
                   }
                 >
                   <MenuItem value="false">Звичайний</MenuItem>
@@ -363,13 +420,9 @@ export default function StoreProductsPage() {
                 </TextField>
               )}
             />
-            {!selected && watchPromo && promoCreateBlocked && capsLoading ? (
-              <Alert severity="info">Перевірка наявності звичайного UPC…</Alert>
-            ) : null}
-            {!selected && watchPromo && promoCreateBlocked && !capsLoading && productCaps && !productCaps.has_regular_store_product ? (
-              <Alert severity="warning">
-                Неможливо створити акційний товар: для обраного товару в каталозі ще немає{' '}
-                <strong>звичайної</strong> позиції в магазині. Спочатку додайте звичайний UPC для цього id_product.
+            {!selected && watchPromo && !regularForCurrentProduct ? (
+              <Alert severity="info">
+                Для цього товару ще немає звичайної позиції в магазині. Ви можете створити акційну позицію, вказавши ціну вручну.
               </Alert>
             ) : null}
           </Box>
@@ -382,10 +435,6 @@ export default function StoreProductsPage() {
             disabled={
               createMutation.isPending
               || updateMutation.isPending
-              || (!selected
-                && watchPromo
-                && promoCreateBlocked
-                && (!productCaps || !productCaps.has_regular_store_product))
             }
           >
             {createMutation.isPending || updateMutation.isPending

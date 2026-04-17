@@ -18,9 +18,7 @@ import { AxiosError } from 'axios';
 import {
   getEmployeesSortedBySurname,
   getCashiersSortedBySurname,
-  searchEmployeesBySurname,
   searchEmployeeContactsBySurname,
-  getEmployees,
   createEmployee,
   updateEmployee,
   deleteEmployee,
@@ -29,14 +27,20 @@ import {
 import { type Employee } from '../../types';
 import { openReportPreview } from '../../utils/reportPrint';
 import { getApiErrorMessage } from '../../utils/apiError';
+import { MAX_NAME_LEN, PHONE_HINT, PHONE_PATTERN } from '../../utils/validation';
 
-const PHONE_PATTERN = /^\+?[0-9]{1,12}$/;
-const PHONE_HINT = 'Формат: +XXXXXXXXXXXX (до 12 цифр)';
+const MAX_EMPLOYEE_ID_LEN = 10;
 
 type EmployeeForm = Omit<Employee, 'id_employee'> & {
   id_employee?: string;
   password?: string;
 };
+
+function maxBirthDateForAge18(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 18);
+  return d.toISOString().slice(0, 10);
+}
 
 function getApiError(err: unknown): string {
   if (err instanceof AxiosError) {
@@ -65,7 +69,16 @@ export default function EmployeesPage() {
     queryKey: ['employees-page', viewMode, appliedSurname],
     queryFn: async () => {
       if (viewMode === 'cashiers') return getCashiersSortedBySurname();
-      if (viewMode === 'search') return searchEmployeesBySurname(appliedSurname);
+      if (viewMode === 'search') {
+        const all = await getEmployeesSortedBySurname();
+        const s = appliedSurname.trim().toLowerCase();
+        if (!s) return [];
+        return all.filter(
+          (e) =>
+            e.empl_surname.toLowerCase().includes(s)
+            || `${e.empl_surname} ${e.empl_name}`.toLowerCase().includes(s),
+        );
+      }
       return getEmployeesSortedBySurname();
     },
     enabled: viewMode !== 'contacts' && (viewMode !== 'search' || Boolean(appliedSurname.trim())),
@@ -136,7 +149,7 @@ export default function EmployeesPage() {
 
   const handlePrintReport = async () => {
     try {
-      const reportEmployees = await getEmployees();
+      const reportEmployees = await getEmployeesSortedBySurname();
       openReportPreview(
         'Звіт: Працівники',
         [
@@ -321,7 +334,8 @@ export default function EmployeesPage() {
               <Box sx={{ display: 'flex', gap: 2 }}>
                 <TextField
                   label="ID працівника" fullWidth size="small"
-                  {...register('id_employee', { required: "Обов'язкове поле" })}
+                  inputProps={{ maxLength: MAX_EMPLOYEE_ID_LEN }}
+                  {...register('id_employee', { required: "Обов'язкове поле", maxLength: MAX_EMPLOYEE_ID_LEN })}
                   error={!!errors.id_employee}
                   helperText={errors.id_employee?.message}
                 />
@@ -337,12 +351,14 @@ export default function EmployeesPage() {
             <Box sx={{ display: 'flex', gap: 2 }}>
               <TextField
                 label="Прізвище" fullWidth size="small"
+                inputProps={{ maxLength: MAX_NAME_LEN }}
                 {...register('empl_surname', { required: "Обов'язкове поле" })}
                 error={!!errors.empl_surname}
                 helperText={errors.empl_surname?.message}
               />
               <TextField
                 label="Ім'я" fullWidth size="small"
+                inputProps={{ maxLength: MAX_NAME_LEN }}
                 {...register('empl_name', { required: "Обов'язкове поле" })}
                 error={!!errors.empl_name}
                 helperText={errors.empl_name?.message}
@@ -351,6 +367,7 @@ export default function EmployeesPage() {
 
             <TextField
               label="По батькові" fullWidth size="small"
+              inputProps={{ maxLength: MAX_NAME_LEN }}
               {...register('empl_patronymic')}
             />
 
@@ -375,7 +392,11 @@ export default function EmployeesPage() {
               <TextField
                 label="Дата народження" fullWidth size="small" type="date"
                 InputLabelProps={{ shrink: true }}
-                {...register('date_of_birth', { required: "Обов'язкове поле" })}
+                {...register('date_of_birth', {
+                  required: "Обов'язкове поле",
+                  validate: (v) =>
+                    !v || v <= maxBirthDateForAge18() || 'Вік працівника має бути не менше 18 років',
+                })}
                 error={!!errors.date_of_birth}
                 helperText={errors.date_of_birth?.message}
               />
@@ -400,8 +421,22 @@ export default function EmployeesPage() {
             />
 
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <TextField label="Місто" fullWidth size="small" {...register('city', { required: "Обов'язкове поле" })} error={!!errors.city} />
-              <TextField label="Вулиця" fullWidth size="small" {...register('street', { required: "Обов'язкове поле" })} error={!!errors.street} />
+              <TextField
+                label="Місто"
+                fullWidth
+                size="small"
+                inputProps={{ maxLength: MAX_NAME_LEN }}
+                {...register('city', { required: "Обов'язкове поле" })}
+                error={!!errors.city}
+              />
+              <TextField
+                label="Вулиця"
+                fullWidth
+                size="small"
+                inputProps={{ maxLength: MAX_NAME_LEN }}
+                {...register('street', { required: "Обов'язкове поле" })}
+                error={!!errors.street}
+              />
               <TextField label="Індекс" fullWidth size="small" {...register('zip_code', { required: "Обов'язкове поле" })} error={!!errors.zip_code} />
             </Box>
           </Box>

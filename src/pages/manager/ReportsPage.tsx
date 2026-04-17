@@ -1,18 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Alert, Box, Button, MenuItem, Paper, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, MenuItem, Paper, TextField, Typography } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { getEmployeesByQuery, getCashierSalesReport, type CashierSalesReport } from '../../api/employees';
 import { getAllCashiersSalesSum } from '../../api/checks';
 import { getProductTotalSold } from '../../api/storeProducts';
-import {
-  q1Member1GroupingByCategory,
-  q2Member1DoubleNegationByCategory,
-  q3Member2GroupingPromoSales,
-  q4Member2DoubleNegationCashiersByCategory,
-  q5Member3GroupingByProducer,
-  q6Member3DoubleNegationCardsByCashier,
-  type AdvancedRow,
-} from '../../api/advancedQueries';
 import { openReportPreview } from '../../utils/reportPrint';
 import { type Employee } from '../../types';
 
@@ -24,9 +15,6 @@ export default function ReportsPage() {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [loading, setLoading] = useState<'cashier' | 'all' | 'product' | ''>('');
-  const [categoryId, setCategoryId] = useState('');
-  const [advancedRows, setAdvancedRows] = useState<AdvancedRow[]>([]);
-  const [advancedTitle, setAdvancedTitle] = useState('');
   const [cashierReport, setCashierReport] = useState<CashierSalesReport | null>(null);
   const [allCashiersSum, setAllCashiersSum] = useState<number | null>(null);
   const [productTotal, setProductTotal] = useState<number | null>(null);
@@ -111,17 +99,6 @@ export default function ReportsPage() {
       setError('Не вдалося отримати звіт по UPC. Перевір UPC та період.');
     } finally {
       setLoading('');
-    }
-  };
-
-  const runAdvanced = async (title: string, action: () => Promise<AdvancedRow[]>) => {
-    try {
-      const rows = await action();
-      setAdvancedRows(rows);
-      setAdvancedTitle(title);
-      setError('');
-    } catch {
-      setError('Не вдалося виконати складний запит.');
     }
   };
 
@@ -236,39 +213,6 @@ export default function ReportsPage() {
         {productTotal !== null && <Typography mt={1}>Кількість: {productTotal} шт.</Typography>}
       </Paper>
 
-      <Paper sx={{ p: 2, mt: 2 }}>
-        <Typography variant="subtitle1" fontWeight={600} mb={2}>4) Складні запити (інтегровані в звіти)</Typography>
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
-          <TextField label="Category ID" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} />
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
-          <Button variant="outlined" onClick={() => runAdvanced('Категорії: продажі за період', () => q1Member1GroupingByCategory(from, to))}>Q1</Button>
-          <Button variant="outlined" onClick={() => runAdvanced('Клієнти, що купили всі товари категорії', () => q2Member1DoubleNegationByCategory(Number(categoryId)))}>Q2</Button>
-          <Button variant="outlined" onClick={() => runAdvanced('Касири: акційні продажі за період', () => q3Member2GroupingPromoSales(from, to))}>Q3</Button>
-          <Button variant="outlined" onClick={() => runAdvanced('Касири, що продали всі товари категорії', () => q4Member2DoubleNegationCashiersByCategory(Number(categoryId)))}>Q4</Button>
-          <Button variant="outlined" onClick={() => runAdvanced('Виробники: продажі за період', () => q5Member3GroupingByProducer(from, to))}>Q5</Button>
-          <Button variant="outlined" onClick={() => runAdvanced('Карти, що покривають UPC касира', () => q6Member3DoubleNegationCardsByCashier(cashierId, from, to))}>Q6</Button>
-        </Box>
-        {advancedTitle ? <Typography mb={1}>{advancedTitle}</Typography> : null}
-        {advancedRows.length > 0 ? (
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                {Object.keys(advancedRows[0]).map((k) => <TableCell key={k}>{k}</TableCell>)}
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {advancedRows.slice(0, 5).map((row, idx) => (
-                <TableRow key={idx}>
-                  {Object.keys(advancedRows[0]).map((k) => <TableCell key={`${idx}-${k}`}>{String(row[k] ?? '')}</TableCell>)}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        ) : (
-          <Typography color="text.secondary">Немає даних</Typography>
-        )}
-      </Paper>
     </Box>
   );
 }

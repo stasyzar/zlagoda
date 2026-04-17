@@ -1,3 +1,6 @@
+/** Ролі в UI після логіну (див. AuthContext / ProtectedRoute). */
+export type AppRole = 'Manager' | 'Cashier';
+
 export interface Employee {
   id_employee: string;
   empl_surname: string;
@@ -17,7 +20,6 @@ export interface Employee {
 export interface Category {
   category_number: number;
   category_name: string;
-  /** Кількість товарів у каталозі (щоб знати, чи можна видалити категорію) */
   product_count?: number;
 }
 
@@ -32,18 +34,51 @@ export interface Product {
   has_promotional_store_product?: boolean;
 }
 
-export interface StoreProduct {
+/** Повна відповідь менеджера за UPC / рядок списку (як StoreProductFullResponse на бекенді). */
+export interface StoreProductFullResponse {
   upc: string;
-  upc_prom?: string;
+  upc_prom?: string | null;
   id_product: number;
   selling_price: number;
   products_number: number;
   promotional_product: boolean;
-  product_name?: string;
-  characteristics?: string;
-  /** Скільки разів цей UPC зустрічається в історії продажів */
+  product_name?: string | null;
+  characteristics?: string | null;
+}
+
+/** Рядок списку «товари у магазині» (бекенд серіалізує як StoreProductDetailsDto; поля збігаються з Full + sale_rows_count). */
+export interface StoreProductListRow extends StoreProductFullResponse {
   sale_rows_count?: number;
 }
+
+/** Касир: лише UPC, ціна, кількість (GET /store-products/{upc}). */
+export interface StoreProductCashierResponse {
+  upc: string;
+  selling_price: number;
+  products_number: number;
+}
+
+/** Тіло створення/оновлення позиції у магазині (StoreProductRequest). */
+export interface StoreProductRequestPayload {
+  upc: string;
+  id_product: number;
+  selling_price?: number;
+  products_number: number;
+  promotional_product: boolean;
+}
+
+/** Сутність Store_Product після POST/PUT (модель без назви товару). */
+export interface StoreProductEntity {
+  upc: string;
+  upc_prom?: string | null;
+  id_product: number;
+  selling_price: number;
+  products_number: number;
+  promotional_product: boolean;
+}
+
+/** @deprecated Використовуйте StoreProductListRow / StoreProductFullResponse / StoreProductCashierResponse. */
+export type StoreProduct = StoreProductListRow;
 
 export interface CustomerCard {
   card_number: string;
@@ -55,7 +90,6 @@ export interface CustomerCard {
   street?: string;
   zip_code?: string;
   percent: number;
-  /** Кількість чеків з цією карткою (щоб знати, чи можна видалити карту) */
   check_count?: number;
 }
 
@@ -68,6 +102,18 @@ export interface Check {
   vat: number;
 }
 
+export interface CheckSaleItem {
+  upc: string;
+  product_name: string;
+  quantity: number;
+  selling_price: number;
+}
+
+/** GET /checks/{number} — CheckDetailsDto. */
+export interface CheckDetails extends Check {
+  items?: CheckSaleItem[];
+}
+
 export interface Sale {
   upc: string;
   check_number: string;
@@ -75,9 +121,8 @@ export interface Sale {
   selling_price: number;
 }
 
-// Для авторизації
 export interface AuthUser {
   id_employee: string;
-  role: 'Manager' | 'Cashier';
+  role: AppRole;
   token: string;
 }

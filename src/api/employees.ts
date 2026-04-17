@@ -1,7 +1,7 @@
 import apiClient from './client';
 import { type Employee } from '../types';
 
-export interface EmployeeCreatePayload extends Omit<Employee, 'id_employee'> {
+export interface EmployeeCreatePayload extends Omit<Employee, 'id_employee' | 'check_count'> {
   id_employee: string;
   password: string;
 }
@@ -26,77 +26,68 @@ export interface CashierSalesReport {
 }
 
 export const getEmployees = async (): Promise<Employee[]> => {
-  const { data } = await apiClient.get('/employees/sorted-by-surname');
+  const { data } = await apiClient.get<Employee[]>('/employees/sorted-by-surname');
   return data;
 };
 
-export const getEmployeesSortedBySurname = async (): Promise<Employee[]> => {
-  const { data } = await apiClient.get('/employees/sorted-by-surname');
-  return data;
-};
+export const getEmployeesSortedBySurname = async (): Promise<Employee[]> => getEmployees();
 
 export const getCashiersSortedBySurname = async (): Promise<Employee[]> => {
-  const { data } = await apiClient.get('/employees/cashiers/sorted-by-surname');
+  const { data } = await apiClient.get<Employee[]>('/employees/cashiers/sorted-by-surname');
   return data;
 };
 
-export const searchEmployeesBySurname = async (surname: string): Promise<Employee[]> => {
-  const { data } = await apiClient.get(`/employees/search-by-surname/${encodeURIComponent(surname.trim())}`);
-  return data;
-};
-
+/** Менеджер п.11: GET /employees/contacts/{surname} */
 export const searchEmployeeContactsBySurname = async (surname: string): Promise<EmployeeContactInfo[]> => {
-  const { data } = await apiClient.get(`/employees/search-by-surname/${encodeURIComponent(surname.trim())}/contacts`);
+  const { data } = await apiClient.get<EmployeeContactInfo[]>(
+    `/employees/contacts/${encodeURIComponent(surname.trim())}`,
+  );
   return data;
 };
 
 export const getEmployeesByQuery = async (params?: EmployeesQueryParams): Promise<Employee[]> => {
   if (params?.role === 'cashier') {
-    const { data } = await apiClient.get('/employees/cashiers/sorted-by-surname');
-    return data;
+    return getCashiersSortedBySurname();
   }
-  if (params?.surname) {
-    const { data } = await apiClient.get(`/employees/search-by-surname/${encodeURIComponent(params.surname)}`);
-    return data;
-  }
-  const { data } = await apiClient.get('/employees/sorted-by-surname');
-  return data;
+  return getEmployeesSortedBySurname();
 };
 
-export const getCashiers = async (): Promise<Employee[]> => {
-  const { data } = await apiClient.get('/employees/cashiers/sorted-by-surname');
-  return data;
-};
+export const getCashiers = async (): Promise<Employee[]> => getCashiersSortedBySurname();
 
 export const getEmployee = async (id: string): Promise<Employee> => {
-  const { data } = await apiClient.get(`/employees/${id}`);
+  const { data } = await apiClient.get<Employee>(`/employees/${id}`);
   return data;
 };
 
 export const getMyEmployeeProfile = async (): Promise<Employee> => {
-  const { data } = await apiClient.get('/employees/me');
+  const { data } = await apiClient.get<Employee>('/employees/me');
   return data;
 };
 
-export const getCashierSalesReport = async (id: string, from: string, to: string): Promise<CashierSalesReport> => {
-  const { data } = await apiClient.get(`/checks/sales-sum/by-cashier/${id}`, {
+export const getCashierSalesReport = async (
+  id: string,
+  from: string,
+  to: string,
+): Promise<CashierSalesReport> => {
+  const { data } = await apiClient.get<Record<string, unknown>>(`/checks/sales-sum/by-cashier/${id}`, {
     params: { from: `${from}T00:00:00`, to: `${to}T23:59:59` },
   });
+  const raw = data.total_sum ?? data.totalSum;
   return {
     id_employee: id,
     empl_surname: '',
     empl_name: '',
-    total_sum: Number(data.total_sum ?? data.totalSum ?? 0),
+    total_sum: typeof raw === 'number' ? raw : Number(raw ?? 0),
   };
 };
 
 export const createEmployee = async (employee: EmployeeCreatePayload): Promise<Employee> => {
-  const { data } = await apiClient.post('/employees', employee);
+  const { data } = await apiClient.post<Employee>('/employees', employee);
   return data;
 };
 
 export const updateEmployee = async (id: string, employee: Partial<Employee>): Promise<Employee> => {
-  const { data } = await apiClient.put(`/employees/${id}`, employee);
+  const { data } = await apiClient.put<Employee>(`/employees/${id}`, employee);
   return data;
 };
 

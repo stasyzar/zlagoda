@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import {
   Box, Typography, TextField, InputAdornment, Alert,
-  Chip, ToggleButton, ToggleButtonGroup, Button,
+  ToggleButton, ToggleButtonGroup, Button,
 } from '@mui/material';
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import { Search as SearchIcon } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { getStoreProductsList, getStoreProductsSearch } from '../../api/storeProducts';
-import { getProducts } from '../../api/products';
 
 export default function CashierStoreProductsPage() {
   const [listFilter, setListFilter] = useState<'all' | 'promo' | 'regular'>('all');
@@ -24,36 +23,21 @@ export default function CashierStoreProductsPage() {
     },
   });
 
-  const { data: products = [], isLoading: loadingP, error: errorP } = useQuery({
-    queryKey: ['products'],
-    queryFn: getProducts,
-  });
-
+  /** За ТЗ для касира на вітрині — лише UPC, ціна, кількість (дані з обмеженої відповіді списку не дублюємо назвою в таблиці). */
   const columns: GridColDef[] = [
-    { field: 'upc', headerName: 'UPC', width: 140, sortable: false, filterable: false },
+    { field: 'upc', headerName: 'UPC', width: 160, sortable: false, filterable: false },
     {
-      field: 'id_product', headerName: 'Назва товару', flex: 1, sortable: false, filterable: false,
-      renderCell: (params) =>
-        params.row.product_name ?? products.find((p) => p.id_product === params.value)?.product_name ?? params.value,
+      field: 'selling_price',
+      headerName: 'Ціна (грн)',
+      width: 130,
+      sortable: false,
+      filterable: false,
+      renderCell: (params) => `${params.value}`,
     },
-    {
-      field: 'selling_price', headerName: 'Ціна', width: 120, sortable: false, filterable: false,
-      renderCell: (params) => `${params.value} грн`,
-    },
-    { field: 'products_number', headerName: 'Залишок (шт)', width: 130, sortable: false, filterable: false },
-    {
-      field: 'promotional_product', headerName: 'Тип', width: 120, sortable: false, filterable: false,
-      renderCell: (params) => (
-        <Chip
-          label={params.value ? 'Акційний' : 'Звичайний'}
-          color={params.value ? 'warning' : 'default'}
-          size="small"
-        />
-      ),
-    },
+    { field: 'products_number', headerName: 'Залишок (шт)', width: 140, sortable: false, filterable: false },
   ];
 
-  if (errorSP || errorP) return <Alert severity="error">Помилка завантаження даних</Alert>;
+  if (errorSP) return <Alert severity="error">Помилка завантаження даних</Alert>;
 
   return (
     <Box>
@@ -97,12 +81,16 @@ export default function CashierStoreProductsPage() {
         </Button>
       </Box>
 
+      <Alert severity="info" sx={{ mb: 2 }}>
+        Деталі за одним UPC (лише ціна та залишок) доступні через POS-екран «Новий продаж».
+      </Alert>
+
       <Box sx={{ bgcolor: 'white', borderRadius: 2, overflow: 'hidden' }}>
         <DataGrid
           rows={storeProducts}
           columns={columns}
           getRowId={(row) => row.upc}
-          loading={loadingSP || loadingP}
+          loading={loadingSP}
           autoHeight
           pageSizeOptions={[10, 25, 50]}
           initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}

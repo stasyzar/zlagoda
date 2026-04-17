@@ -35,6 +35,8 @@ export default function MyProfilePage() {
             <Box><Typography color="text.secondary">По батькові</Typography><Typography>{me.empl_patronymic || '—'}</Typography></Box>
             <Box><Typography color="text.secondary">Телефон</Typography><Typography>{me.phone_number}</Typography></Box>
             <Box><Typography color="text.secondary">Зарплата</Typography><Typography>{me.salary} грн</Typography></Box>
+            <Box><Typography color="text.secondary">Дата народження</Typography><Typography>{me.date_of_birth}</Typography></Box>
+            <Box><Typography color="text.secondary">Дата початку роботи</Typography><Typography>{me.date_of_start}</Typography></Box>
             <Box><Typography color="text.secondary">Місто</Typography><Typography>{me.city}</Typography></Box>
             <Box><Typography color="text.secondary">Вулиця</Typography><Typography>{me.street}</Typography></Box>
             <Box><Typography color="text.secondary">Індекс</Typography><Typography>{me.zip_code}</Typography></Box>

@@ -1,10 +1,11 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import type { AppRole } from '../types';
 
 interface Props {
   children: React.ReactElement;
-  role?: 'Manager' | 'Cashier';
+  role?: AppRole;
 }
 
 export default function ProtectedRoute({ children, role }: Props) {

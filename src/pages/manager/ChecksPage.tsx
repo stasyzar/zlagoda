@@ -12,9 +12,7 @@ import {
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  getAllChecksSortedByPrintDateDesc,
   getAllChecksByPeriod,
-  getChecksByCashierSortedByPrintDateDesc,
   getChecksByCashierAndPeriod,
   deleteCheck,
   getCheckByNumber,
@@ -24,34 +22,28 @@ import { type Check } from '../../types';
 import { openReportPreview } from '../../utils/reportPrint';
 import { getApiErrorMessage } from '../../utils/apiError';
 
-interface SaleItem {
-  upc: string;
-  quantity: number;
-  selling_price: number;
-  product_name?: string;
-}
-
-interface DetailedCheck extends Check {
-  items?: SaleItem[];
+function defaultDateRange() {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate() - 30);
+  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
 }
 
 type Scope = 'all' | 'cashier';
-type PeriodMode = 'none' | 'range';
 
 export default function ChecksPage() {
   const queryClient = useQueryClient();
+  const initRange = defaultDateRange();
 
   const [scopeDraft, setScopeDraft] = useState<Scope>('all');
   const [cashierDraft, setCashierDraft] = useState('');
-  const [periodDraft, setPeriodDraft] = useState<PeriodMode>('none');
-  const [dateFromDraft, setDateFromDraft] = useState('');
-  const [dateToDraft, setDateToDraft] = useState('');
+  const [dateFromDraft, setDateFromDraft] = useState(initRange.from);
+  const [dateToDraft, setDateToDraft] = useState(initRange.to);
 
   const [scopeApplied, setScopeApplied] = useState<Scope>('all');
   const [cashierApplied, setCashierApplied] = useState('');
-  const [periodApplied, setPeriodApplied] = useState<PeriodMode>('none');
-  const [dateFromApplied, setDateFromApplied] = useState('');
-  const [dateToApplied, setDateToApplied] = useState('');
+  const [dateFromApplied, setDateFromApplied] = useState(initRange.from);
+  const [dateToApplied, setDateToApplied] = useState(initRange.to);
 
   const [listError, setListError] = useState('');
   const [selectedCheckNumber, setSelectedCheckNumber] = useState<string | null>(null);
@@ -64,41 +56,30 @@ export default function ChecksPage() {
   });
 
   const queryEnabled =
-    (scopeApplied === 'all' && periodApplied === 'none')
-    || (scopeApplied === 'all' && periodApplied === 'range' && Boolean(dateFromApplied && dateToApplied))
-    || (scopeApplied === 'cashier' && periodApplied === 'none' && Boolean(cashierApplied.trim()))
-    || (scopeApplied === 'cashier'
-      && periodApplied === 'range'
-      && Boolean(cashierApplied.trim() && dateFromApplied && dateToApplied));
+    Boolean(dateFromApplied && dateToApplied)
+    && (scopeApplied === 'all' || (scopeApplied === 'cashier' && Boolean(cashierApplied.trim())));
 
   const { data: checks = [], isLoading, error } = useQuery({
     queryKey: [
       'manager-checks',
       scopeApplied,
       cashierApplied,
-      periodApplied,
       dateFromApplied,
       dateToApplied,
     ],
     queryFn: async () => {
-      if (scopeApplied === 'all' && periodApplied === 'none') {
-        return getAllChecksSortedByPrintDateDesc();
-      }
-      if (scopeApplied === 'all' && periodApplied === 'range') {
+      if (scopeApplied === 'all') {
         return getAllChecksByPeriod(dateFromApplied, dateToApplied);
-      }
-      if (scopeApplied === 'cashier' && periodApplied === 'none') {
-        return getChecksByCashierSortedByPrintDateDesc(cashierApplied.trim());
       }
       return getChecksByCashierAndPeriod(cashierApplied.trim(), dateFromApplied, dateToApplied);
     },
     enabled: queryEnabled,
   });
 
-  const { data: checkDetails, isLoading: loadingDetails } = useQuery<DetailedCheck>({
+  const { data: checkDetails, isLoading: loadingDetails } = useQuery({
     queryKey: ['check-details', selectedCheckNumber],
     queryFn: () => getCheckByNumber(selectedCheckNumber!),
-    enabled: !!selectedCheckNumber && detailsDialogOpen,
+    enabled: Boolean(selectedCheckNumber) && detailsDialogOpen,
   });
 
   const deleteMutation = useMutation({
@@ -116,29 +97,31 @@ export default function ChecksPage() {
       setListError('Оберіть касира для цього режиму.');
       return;
     }
-    if (periodDraft === 'range' && (!dateFromDraft || !dateToDraft)) {
+    if (!dateFromDraft || !dateToDraft) {
       setListError('Вкажіть дату «від» і «до» для періоду.');
+      return;
+    }
+    if (dateFromDraft > dateToDraft) {
+      setListError('Дата «від» не може бути більшою за «до».');
       return;
     }
     setScopeApplied(scopeDraft);
     setCashierApplied(cashierDraft);
-    setPeriodApplied(periodDraft);
-    setDateFromApplied(periodDraft === 'range' ? dateFromDraft : '');
-    setDateToApplied(periodDraft === 'range' ? dateToDraft : '');
+    setDateFromApplied(dateFromDraft);
+    setDateToApplied(dateToDraft);
   };
 
   const resetFilters = () => {
+    const r = defaultDateRange();
     setListError('');
     setScopeDraft('all');
     setCashierDraft('');
-    setPeriodDraft('none');
-    setDateFromDraft('');
-    setDateToDraft('');
+    setDateFromDraft(r.from);
+    setDateToDraft(r.to);
     setScopeApplied('all');
     setCashierApplied('');
-    setPeriodApplied('none');
-    setDateFromApplied('');
-    setDateToApplied('');
+    setDateFromApplied(r.from);
+    setDateToApplied(r.to);
   };
 
   const handleOpenDetails = (checkNumber: string) => {
@@ -152,37 +135,36 @@ export default function ChecksPage() {
   };
 
   const handlePrintReport = () => {
-    if (periodApplied !== 'range' || !dateFromApplied || !dateToApplied) {
-      setListError('Звіт по чеках (вимога): оберіть «Усі чеки», період і натисніть «Застосувати», потім «Звіт».');
+    if (!dateFromApplied || !dateToApplied) {
+      setListError('Вкажіть період і натисніть «Застосувати».');
       return;
     }
-    if (scopeApplied !== 'all') {
-      setListError('Звіт по чеках формується для всіх касирів за період (endpoint all/by-period).');
+    if (scopeApplied === 'cashier' && !cashierApplied.trim()) {
+      setListError('Для звіту по касиру оберіть касира та застосуйте фільтр.');
       return;
     }
     setListError('');
-    getAllChecksByPeriod(dateFromApplied, dateToApplied)
-      .then((reportChecks) => {
-        const filters = `Усі касири; від ${dateFromApplied} до ${dateToApplied}`;
-        openReportPreview(
-          'Звіт: Чеки',
-          [
-            { header: 'Номер чека', getValue: (c: Check) => c.check_number },
-            {
-              header: 'Касир',
-              getValue: (c: Check) =>
-                employees.find((e) => e.id_employee === c.id_employee)?.empl_surname ?? c.id_employee,
-            },
-            { header: 'Карта', getValue: (c: Check) => c.card_number },
-            { header: 'Дата', getValue: (c: Check) => new Date(c.print_date).toLocaleString('uk-UA') },
-            { header: 'Сума', getValue: (c: Check) => Number(c.sum_total).toFixed(2) },
-            { header: 'ПДВ', getValue: (c: Check) => Number(c.vat).toFixed(2) },
-          ],
-          reportChecks,
-          filters,
-        );
-      })
-      .catch(() => setListError('Не вдалося сформувати звіт по чеках.'));
+    const filters =
+      scopeApplied === 'all'
+        ? `Усі касири; від ${dateFromApplied} до ${dateToApplied}`
+        : `Касир ${cashierApplied}; від ${dateFromApplied} до ${dateToApplied}`;
+    openReportPreview(
+      'Звіт: Чеки',
+      [
+        { header: 'Номер чека', getValue: (c: Check) => c.check_number },
+        {
+          header: 'Касир',
+          getValue: (c: Check) =>
+            employees.find((e) => e.id_employee === c.id_employee)?.empl_surname ?? c.id_employee,
+        },
+        { header: 'Карта', getValue: (c: Check) => c.card_number ?? '' },
+        { header: 'Дата', getValue: (c: Check) => new Date(c.print_date).toLocaleString('uk-UA') },
+        { header: 'Сума', getValue: (c: Check) => Number(c.sum_total).toFixed(2) },
+        { header: 'ПДВ', getValue: (c: Check) => Number(c.vat).toFixed(2) },
+      ],
+      checks,
+      filters,
+    );
   };
 
   const columns: GridColDef[] = [
@@ -269,15 +251,6 @@ export default function ChecksPage() {
             <ToggleButton value="all">Усі чеки</ToggleButton>
             <ToggleButton value="cashier">Чеки касира</ToggleButton>
           </ToggleButtonGroup>
-          <ToggleButtonGroup
-            value={periodDraft}
-            exclusive
-            size="small"
-            onChange={(_, v) => v && setPeriodDraft(v)}
-          >
-            <ToggleButton value="none">Без обмеження дат</ToggleButton>
-            <ToggleButton value="range">За періодом</ToggleButton>
-          </ToggleButtonGroup>
         </Box>
         {scopeDraft === 'cashier' ? (
           <TextField
@@ -296,26 +269,24 @@ export default function ChecksPage() {
             ))}
           </TextField>
         ) : null}
-        {periodDraft === 'range' ? (
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-            <TextField
-              label="З дати"
-              type="date"
-              size="small"
-              InputLabelProps={{ shrink: true }}
-              value={dateFromDraft}
-              onChange={(e) => setDateFromDraft(e.target.value)}
-            />
-            <TextField
-              label="По дату"
-              type="date"
-              size="small"
-              InputLabelProps={{ shrink: true }}
-              value={dateToDraft}
-              onChange={(e) => setDateToDraft(e.target.value)}
-            />
-          </Box>
-        ) : null}
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          <TextField
+            label="З дати"
+            type="date"
+            size="small"
+            InputLabelProps={{ shrink: true }}
+            value={dateFromDraft}
+            onChange={(e) => setDateFromDraft(e.target.value)}
+          />
+          <TextField
+            label="По дату"
+            type="date"
+            size="small"
+            InputLabelProps={{ shrink: true }}
+            value={dateToDraft}
+            onChange={(e) => setDateToDraft(e.target.value)}
+          />
+        </Box>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
           <Button variant="contained" size="small" onClick={applyFilters}>
             Застосувати
@@ -324,7 +295,7 @@ export default function ChecksPage() {
             Скинути
           </Button>
           <Button variant="outlined" size="small" startIcon={<PrintIcon />} onClick={handlePrintReport}>
-            Звіт (усі за період)
+            Звіт (поточний список)
           </Button>
         </Box>
       </Box>
@@ -371,10 +342,31 @@ export default function ChecksPage() {
                 ))}
               </Box>
 
-              <Box sx={{ mt: 2, textAlign: 'right' }}>
-                <Typography variant="caption">ПДВ: {Number(checkDetails.vat).toFixed(2)} грн</Typography>
-                <Typography variant="h6">Всього: {Number(checkDetails.sum_total).toFixed(2)} грн</Typography>
-              </Box>
+              {(() => {
+                const goodsTotal = (checkDetails.items ?? []).reduce(
+                  (sum, item) => sum + Number(item.selling_price) * Number(item.quantity),
+                  0,
+                );
+                const checkTotal = Number(checkDetails.sum_total);
+                const discount = Math.max(0, goodsTotal - checkTotal);
+
+                return (
+                  <Box sx={{ mt: 2, textAlign: 'right' }}>
+                    {discount > 0 ? (
+                      <>
+                        <Typography variant="body2">
+                          Сума товарів (без знижки): {goodsTotal.toFixed(2)} грн
+                        </Typography>
+                        <Typography variant="body2" color="success.main">
+                          Знижка: -{discount.toFixed(2)} грн
+                        </Typography>
+                      </>
+                    ) : null}
+                    <Typography variant="caption">ПДВ: {Number(checkDetails.vat).toFixed(2)} грн</Typography>
+                    <Typography variant="h6">Всього: {checkTotal.toFixed(2)} грн</Typography>
+                  </Box>
+                );
+              })()}
             </Box>
           ) : null}
         </DialogContent>

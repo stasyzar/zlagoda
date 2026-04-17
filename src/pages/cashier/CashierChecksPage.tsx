@@ -267,12 +267,33 @@ export default function CashierChecksPage() {
                   ))}
                 </TableBody>
               </Table>
-              <Box sx={{ mt: 2, textAlign: 'right' }}>
-                <Typography variant="body2">ПДВ: {checkDetail.vat} грн</Typography>
-                <Typography variant="h6" fontWeight={600} color="primary">
-                  Разом: {checkDetail.sum_total} грн
-                </Typography>
-              </Box>
+              {(() => {
+                const goodsTotal = (checkDetail.items ?? []).reduce(
+                  (sum, sale) => sum + Number(sale.selling_price) * Number(sale.quantity),
+                  0,
+                );
+                const checkTotal = Number(checkDetail.sum_total);
+                const discount = Math.max(0, goodsTotal - checkTotal);
+
+                return (
+                  <Box sx={{ mt: 2, textAlign: 'right' }}>
+                    {discount > 0 ? (
+                      <>
+                        <Typography variant="body2">
+                          Сума товарів (без знижки): {goodsTotal.toFixed(2)} грн
+                        </Typography>
+                        <Typography variant="body2" color="success.main">
+                          Знижка: -{discount.toFixed(2)} грн
+                        </Typography>
+                      </>
+                    ) : null}
+                    <Typography variant="body2">ПДВ: {Number(checkDetail.vat).toFixed(2)} грн</Typography>
+                    <Typography variant="h6" fontWeight={600} color="primary">
+                      Разом: {checkTotal.toFixed(2)} грн
+                    </Typography>
+                  </Box>
+                );
+              })()}
             </Box>
           ) : <CircularProgress sx={{ display: 'block', mx: 'auto' }} />}
         </DialogContent>
