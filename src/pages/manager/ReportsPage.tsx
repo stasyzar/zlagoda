@@ -1,11 +1,53 @@
 import { useMemo, useState } from 'react';
-import { Alert, Box, Button, MenuItem, Paper, TextField, Typography } from '@mui/material';
+import { 
+  Alert, Box, Button, MenuItem, Paper, TextField, Typography,
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow 
+} from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { getEmployeesByQuery, getCashierSalesReport, type CashierSalesReport } from '../../api/employees';
 import { getAllCashiersSalesSum } from '../../api/checks';
 import { getProductTotalSold } from '../../api/storeProducts';
 import { openReportPreview } from '../../utils/reportPrint';
 import { type Employee } from '../../types';
+import { getApiErrorMessage } from '../../utils/apiError';
+import { runAnalyticsReport, type AnalyticsReportType, type AnalyticsRow } from '../../api/analytics';
+
+interface AnalyticsReportOption {
+  id: AnalyticsReportType;
+  title: string;
+  description: string;
+  params: Array<'period'>;
+}
+
+const ANALYTICS_OPTIONS: AnalyticsReportOption[] = [
+  {
+    id: 'category-sales-volume',
+    title: 'Обсяг реалізації за категоріями товарів',
+    description: 'Сумарна кількість проданих одиниць по кожній категорії за обраний період.',
+    params: ['period'],
+  },
+  {
+    id: 'vip-customers',
+    title: 'Клієнти з охопленням усіх категорій асортименту',
+    description: 'Постійні клієнти, які мають покупки з кожної наявної категорії.',
+    params: [],
+  },
+];
+
+function formatCellValue(value: unknown): string {
+  if (value === null || value === undefined) return '-';
+  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  if (typeof value === 'boolean') return value ? 'Так' : 'Ні';
+  if (typeof value === 'string') return value;
+  return String(value);
+}
+
+function toHeaderLabel(key: string): string {
+  return key
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
 
 export default function ReportsPage() {
   const [from, setFrom] = useState('');
@@ -19,6 +61,12 @@ export default function ReportsPage() {
   const [allCashiersSum, setAllCashiersSum] = useState<number | null>(null);
   const [productTotal, setProductTotal] = useState<number | null>(null);
 
+  const [analyticsReport, setAnalyticsReport] = useState<AnalyticsReportType>('category-sales-volume');
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsRows, setAnalyticsRows] = useState<AnalyticsRow[]>([]);
+  const [analyticsError, setAnalyticsError] = useState('');
+  const [analyticsInfo, setAnalyticsInfo] = useState('');
+
   const { data: cashiers = [], error: cashiersError } = useQuery({
     queryKey: ['employees', 'cashiers', 'reports'],
     queryFn: () => getEmployeesByQuery({ role: 'cashier' }),
@@ -27,6 +75,19 @@ export default function ReportsPage() {
   const cashierOptions = useMemo(
     () => cashiers.map((c: Employee) => ({ id: c.id_employee, label: `${c.empl_surname} ${c.empl_name}` })),
     [cashiers],
+  );
+
+  const analyticsColumns = useMemo(() => {
+    const keys = new Set<string>();
+    analyticsRows.forEach((row) => {
+      Object.keys(row).forEach((key) => keys.add(key));
+    });
+    return Array.from(keys);
+  }, [analyticsRows]);
+
+  const selectedAnalyticsOption = useMemo(
+    () => ANALYTICS_OPTIONS.find((option) => option.id === analyticsReport) ?? ANALYTICS_OPTIONS[0],
+    [analyticsReport],
   );
 
   const validateRange = () => {
@@ -41,6 +102,41 @@ export default function ReportsPage() {
     }
     setError('');
     return true;
+  };
+
+  const validateAnalyticsParams = () => {
+    if (selectedAnalyticsOption.params.includes('period')) {
+      if (!from || !to) {
+        setAnalyticsError('Для цього звіту обери період у блоці «Період звітності» (дата від та дата до).');
+        return false;
+      }
+      if (from > to) {
+        setAnalyticsError('Дата "від" не може бути більшою за дату "до".');
+        return false;
+      }
+    }
+    setAnalyticsError('');
+    return true;
+  };
+
+  const runAnalytics = async () => {
+    setAnalyticsInfo('');
+    if (!validateAnalyticsParams()) return;
+
+    try {
+      setAnalyticsLoading(true);
+      const rows = await runAnalyticsReport(analyticsReport, { from, to });
+      setAnalyticsRows(rows);
+      if (rows.length === 0) {
+        setAnalyticsInfo('За вказаними умовами дані відсутні.');
+      }
+      setAnalyticsError('');
+    } catch (e) {
+      setAnalyticsRows([]);
+      setAnalyticsError(getApiErrorMessage(e, 'Не вдалося сформувати аналітичний звіт.'));
+    } finally {
+      setAnalyticsLoading(false);
+    }
   };
 
   const loadCashierReport = async () => {
@@ -115,6 +211,64 @@ export default function ReportsPage() {
           <TextField label="Від" type="date" value={from} onChange={(e) => setFrom(e.target.value)} InputLabelProps={{ shrink: true }} />
           <TextField label="До" type="date" value={to} onChange={(e) => setTo(e.target.value)} InputLabelProps={{ shrink: true }} />
         </Box>
+      </Paper>
+
+      <Paper sx={{ p: 2, mb: 2 }}>
+        <Typography variant="h6" fontWeight={600} mb={2}>Аналітика</Typography>
+
+        {analyticsError && <Alert severity="error" sx={{ mb: 2 }}>{analyticsError}</Alert>}
+        {analyticsInfo && <Alert severity="info" sx={{ mb: 2 }}>{analyticsInfo}</Alert>}
+
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+          <TextField
+            select
+            label="Аналітичний звіт"
+            value={analyticsReport}
+            onChange={(e) => {
+              setAnalyticsReport(e.target.value as AnalyticsReportType);
+              setAnalyticsRows([]);
+              setAnalyticsError('');
+              setAnalyticsInfo('');
+            }}
+            sx={{ minWidth: 420 }}
+          >
+            {ANALYTICS_OPTIONS.map((option) => (
+              <MenuItem key={option.id} value={option.id}>{option.title}</MenuItem>
+            ))}
+          </TextField>
+          <Button variant="contained" onClick={runAnalytics} disabled={analyticsLoading}>
+            {analyticsLoading ? 'Формується...' : 'Сформувати'}
+          </Button>
+        </Box>
+
+        <Typography variant="body2" color="text.secondary" mb={2}>
+          {selectedAnalyticsOption.description}
+        </Typography>
+
+        {analyticsRows.length > 0 && (
+          <TableContainer component={Paper} variant="outlined">
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  {analyticsColumns.map((column) => (
+                    <TableCell key={column} sx={{ fontWeight: 600 }}>
+                      {toHeaderLabel(column)}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {analyticsRows.map((row, rowIndex) => (
+                  <TableRow key={`${rowIndex}-${analyticsColumns.map((col) => String(row[col] ?? '')).join('-')}`}>
+                    {analyticsColumns.map((column) => (
+                      <TableCell key={column}>{formatCellValue(row[column])}</TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
       </Paper>
 
       <Paper sx={{ p: 2, mb: 2 }}>
