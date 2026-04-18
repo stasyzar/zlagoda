@@ -4,7 +4,9 @@ export type AnalyticsRow = Record<string, unknown>;
 
 export type AnalyticsReportType =
   | 'category-sales-volume'
-  | 'vip-customers';
+  | 'vip-customers'
+  | 'loyal-category-fans' 
+  | 'top-products-premium';
 
 function periodParams(from: string, to: string) {
   return {
@@ -25,15 +27,31 @@ export const getVipCustomers = async (): Promise<AnalyticsRow[]> => {
   return data;
 };
 
+export const getLoyalCategoryFans = async (categoryName: string): Promise<AnalyticsRow[]> => {
+  const { data } = await apiClient.get<AnalyticsRow[]>('/analytics/loyal-category-fans', {
+    params: { categoryName: categoryName.trim() },
+  });
+  return data;
+};
+
+export const getTopProductsPremium = async (): Promise<AnalyticsRow[]> => {
+  const { data } = await apiClient.get<AnalyticsRow[]>('/analytics/top-products-premium');
+  return data;
+};
+
 export const runAnalyticsReport = async (
   reportType: AnalyticsReportType,
-  params: { from?: string; to?: string }
+  params: { from?: string; to?: string; categoryName?: string }
 ): Promise<AnalyticsRow[]> => {
   switch (reportType) {
     case 'category-sales-volume':
       return getCategorySalesVolume(params.from ?? '', params.to ?? '');
     case 'vip-customers':
       return getVipCustomers();
+    case 'loyal-category-fans':
+      return getLoyalCategoryFans(params.categoryName ?? '');
+    case 'top-products-premium':
+      return getTopProductsPremium();
     default:
       return [];
   }
