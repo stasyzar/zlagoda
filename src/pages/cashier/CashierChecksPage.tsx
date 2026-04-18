@@ -14,6 +14,7 @@ import { getMyChecksToday, getMyChecksByPeriod, getCheckByNumber } from '../../a
 import { getStoreProducts } from '../../api/storeProducts';
 import { getProducts } from '../../api/products';
 import { type Check } from '../../types';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 interface SaleItem {
   upc: string;
@@ -43,6 +44,9 @@ export default function CashierChecksPage() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selected, setSelected] = useState<Check | null>(null);
   const [checkDetail, setCheckDetail] = useState<DetailedCheck | null>(null);
+  const [checkNumberLookupDraft, setCheckNumberLookupDraft] = useState('');
+  const [checkLookupError, setCheckLookupError] = useState('');
+  const [loadingCheckByNumber, setLoadingCheckByNumber] = useState(false);
 
   const periodQueryEnabled =
     viewApplied === 'today'
@@ -101,12 +105,40 @@ export default function CashierChecksPage() {
 
   const handleView = async (check: Check) => {
     setSelected(check);
+    setCheckLookupError('');
     try {
       const detail = await getCheckByNumber(check.check_number);
       setCheckDetail(detail);
       setViewDialogOpen(true);
     } catch (err) {
       console.error('Не вдалося завантажити деталі чеку', err);
+    }
+  };
+
+  const openCheckByNumber = async () => {
+    const n = checkNumberLookupDraft.trim();
+    if (!n) {
+      setCheckLookupError('Вкажіть номер чека.');
+      return;
+    }
+    setCheckLookupError('');
+    setLoadingCheckByNumber(true);
+    try {
+      const detail = await getCheckByNumber(n);
+      setSelected({
+        check_number: n,
+        id_employee: detail.id_employee,
+        print_date: detail.print_date,
+        sum_total: detail.sum_total,
+        vat: detail.vat,
+        card_number: detail.card_number,
+      });
+      setCheckDetail(detail);
+      setViewDialogOpen(true);
+    } catch (e) {
+      setCheckLookupError(getApiErrorMessage(e, 'Чек не знайдено або немає доступу.'));
+    } finally {
+      setLoadingCheckByNumber(false);
     }
   };
 
@@ -173,6 +205,29 @@ export default function CashierChecksPage() {
 
       {filterHint ? <Alert severity="warning" sx={{ mb: 2 }}>{filterHint}</Alert> : null}
 
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', mb: 2 }}>
+        <TextField
+          label="Номер чека"
+          size="small"
+          value={checkNumberLookupDraft}
+          onChange={(e) => {
+            setCheckNumberLookupDraft(e.target.value);
+            setCheckLookupError('');
+          }}
+          sx={{ minWidth: 240 }}
+        />
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<ViewIcon />}
+          disabled={loadingCheckByNumber}
+          onClick={openCheckByNumber}
+        >
+          Показати чек
+        </Button>
+      </Box>
+      {checkLookupError ? <Alert severity="error" sx={{ mb: 2 }}>{checkLookupError}</Alert> : null}
+
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2, bgcolor: 'white', p: 2, borderRadius: 2 }}>
         <Typography variant="body2" color="text.secondary">
           Кожен режим — окремий запит на бекенд після «Застосувати».
@@ -232,7 +287,15 @@ export default function CashierChecksPage() {
         />
       </Box>
 
-      <Dialog open={viewDialogOpen} onClose={() => setViewDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={viewDialogOpen}
+        onClose={() => {
+          setViewDialogOpen(false);
+          setCheckLookupError('');
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Чек №{selected?.check_number}</DialogTitle>
         <DialogContent dividers>
           {checkDetail ? (
@@ -298,7 +361,14 @@ export default function CashierChecksPage() {
           ) : <CircularProgress sx={{ display: 'block', mx: 'auto' }} />}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setViewDialogOpen(false)}>Закрити</Button>
+          <Button
+            onClick={() => {
+              setViewDialogOpen(false);
+              setCheckLookupError('');
+            }}
+          >
+            Закрити
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

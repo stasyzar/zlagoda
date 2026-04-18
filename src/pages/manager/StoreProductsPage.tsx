@@ -186,7 +186,7 @@ export default function StoreProductsPage() {
           [
             { header: 'UPC', getValue: (p: StoreProductListRow) => p.upc },
             {
-              header: 'Товар',
+              header: 'Назва товару',
               getValue: (p: StoreProductListRow) =>
                 p.product_name ?? catalog.find((x) => x.id_product === p.id_product)?.product_name ?? p.id_product,
             },
@@ -204,7 +204,7 @@ export default function StoreProductsPage() {
   const columns: GridColDef[] = [
     { field: 'upc', headerName: 'UPC', width: 130, sortable: false, filterable: false },
     {
-      field: 'id_product', headerName: 'Товар', flex: 1, sortable: false, filterable: false,
+      field: 'id_product', headerName: 'Назва товару', flex: 1, sortable: false, filterable: false,
       renderCell: (params) =>
         params.row.product_name ?? products.find((p) => p.id_product === params.value)?.product_name ?? params.value,
     },

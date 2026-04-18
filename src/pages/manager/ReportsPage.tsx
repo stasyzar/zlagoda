@@ -232,7 +232,15 @@ export default function ReportsPage() {
     try {
       setLoading('cashier');
       const result = await getCashierSalesReport(cashierId, from, to);
+      const selectedCashier = cashiers.find((c: Employee) => c.id_employee === cashierId);
       setCashierReport(result);
+      if (selectedCashier) {
+        setCashierReport({
+          ...result,
+          empl_surname: selectedCashier.empl_surname,
+          empl_name: selectedCashier.empl_name,
+        });
+      }
       setError('');
       if (Number(result.total_sum) === 0) {
         setInfo('За обраний період у цього касира не знайдено продажів.');

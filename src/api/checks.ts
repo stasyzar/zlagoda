@@ -43,7 +43,7 @@ export const getMyChecksByPeriod = async (from: string, to: string): Promise<Che
 };
 
 export const getCheckByNumber = async (number: string): Promise<CheckDetails> => {
-  const { data } = await apiClient.get<CheckDetails>(`/checks/${number}`);
+  const { data } = await apiClient.get<CheckDetails>(`/checks/${encodeURIComponent(number.trim())}`);
   return data;
 };
 

@@ -46,6 +46,8 @@ export default function ChecksPage() {
   const [dateToApplied, setDateToApplied] = useState(initRange.to);
 
   const [listError, setListError] = useState('');
+  const [checkNumberLookupDraft, setCheckNumberLookupDraft] = useState('');
+  const [checkLookupError, setCheckLookupError] = useState('');
   const [selectedCheckNumber, setSelectedCheckNumber] = useState<string | null>(null);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -76,7 +78,12 @@ export default function ChecksPage() {
     enabled: queryEnabled,
   });
 
-  const { data: checkDetails, isLoading: loadingDetails } = useQuery({
+  const {
+    data: checkDetails,
+    isLoading: loadingDetails,
+    isError: detailsQueryFailed,
+    error: detailsQueryError,
+  } = useQuery({
     queryKey: ['check-details', selectedCheckNumber],
     queryFn: () => getCheckByNumber(selectedCheckNumber!),
     enabled: Boolean(selectedCheckNumber) && detailsDialogOpen,
@@ -132,6 +139,18 @@ export default function ChecksPage() {
   const handleCloseDetails = () => {
     setDetailsDialogOpen(false);
     setSelectedCheckNumber(null);
+    setCheckLookupError('');
+  };
+
+  const openCheckByNumber = () => {
+    const n = checkNumberLookupDraft.trim();
+    if (!n) {
+      setCheckLookupError('Вкажіть номер чека.');
+      return;
+    }
+    setCheckLookupError('');
+    setSelectedCheckNumber(n);
+    setDetailsDialogOpen(true);
   };
 
   const handlePrintReport = () => {
@@ -237,6 +256,23 @@ export default function ChecksPage() {
     <Box>
       <Typography variant="h5" fontWeight={600} mb={3}>Управління чеками</Typography>
 
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', mb: 2 }}>
+        <TextField
+          label="Номер чека"
+          size="small"
+          value={checkNumberLookupDraft}
+          onChange={(e) => {
+            setCheckNumberLookupDraft(e.target.value);
+            setCheckLookupError('');
+          }}
+          sx={{ minWidth: 240 }}
+        />
+        <Button variant="outlined" size="small" startIcon={<VisibilityIcon />} onClick={openCheckByNumber}>
+          Показати чек
+        </Button>
+      </Box>
+      {checkLookupError ? <Alert severity="warning" sx={{ mb: 2 }}>{checkLookupError}</Alert> : null}
+
       {listError ? <Alert severity="warning" sx={{ mb: 2 }}>{listError}</Alert> : null}
 
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 3, bgcolor: 'white', p: 2, borderRadius: 2 }}>
@@ -319,14 +355,20 @@ export default function ChecksPage() {
         <DialogContent dividers>
           {loadingDetails ? (
             <CircularProgress sx={{ display: 'block', mx: 'auto', my: 2 }} />
+          ) : detailsQueryFailed ? (
+            <Alert severity="error">{getApiErrorMessage(detailsQueryError, 'Не вдалося завантажити чек.')}</Alert>
           ) : checkDetails ? (
             <Box>
-              <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-                <Box sx={{ flex: 1 }}>
+              <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+                <Box sx={{ flex: 1, minWidth: 120 }}>
+                  <Typography variant="caption" color="text.secondary">Касир (id)</Typography>
+                  <Typography variant="body2">{checkDetails.id_employee}</Typography>
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 120 }}>
                   <Typography variant="caption" color="text.secondary">Дата</Typography>
                   <Typography variant="body2">{new Date(checkDetails.print_date).toLocaleString('uk-UA')}</Typography>
                 </Box>
-                <Box sx={{ flex: 1 }}>
+                <Box sx={{ flex: 1, minWidth: 120 }}>
                   <Typography variant="caption" color="text.secondary">Карта</Typography>
                   <Typography variant="body2">{checkDetails.card_number || '—'}</Typography>
                 </Box>
