@@ -28,7 +28,7 @@ const managerLinks = [
   { label: 'Товари у магазині', icon: <StorefrontIcon />, path: '/manager/store-products' },
   { label: 'Карти клієнтів', icon: <CardMembershipIcon />, path: '/manager/customers' },
   { label: 'Чеки', icon: <ReceiptIcon />, path: '/manager/checks' },
-  { label: 'Звіти', icon: <AssessmentIcon />, path: '/manager/reports' },
+  { label: 'Звіти та аналітика', icon: <AssessmentIcon />, path: '/manager/reports' }, 
 ];
 
 const cashierLinks = [
