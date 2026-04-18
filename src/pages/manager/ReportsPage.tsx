@@ -1,14 +1,16 @@
 import { useMemo, useState } from 'react';
 import { 
   Alert, Box, Button, MenuItem, Paper, TextField, Typography,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow 
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+  Autocomplete 
 } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { getEmployeesByQuery, getCashierSalesReport, type CashierSalesReport } from '../../api/employees';
 import { getAllCashiersSalesSum } from '../../api/checks';
 import { getProductTotalSold } from '../../api/storeProducts';
+import { getCategories } from '../../api/categories'; 
 import { openReportPreview } from '../../utils/reportPrint';
-import { type Employee } from '../../types';
+import { type Employee, type Category } from '../../types'; 
 import { getApiErrorMessage } from '../../utils/apiError';
 import { runAnalyticsReport, type AnalyticsReportType, type AnalyticsRow } from '../../api/analytics';
 
@@ -16,7 +18,7 @@ interface AnalyticsReportOption {
   id: AnalyticsReportType;
   title: string;
   description: string;
-  params: Array<'period'>;
+  params: Array<'period' | 'categoryName'>; 
 }
 
 const ANALYTICS_OPTIONS: AnalyticsReportOption[] = [
@@ -30,6 +32,19 @@ const ANALYTICS_OPTIONS: AnalyticsReportOption[] = [
     id: 'vip-customers',
     title: 'Клієнти з охопленням усіх категорій асортименту',
     description: 'Постійні клієнти, які мають покупки з кожної наявної категорії.',
+    params: [],
+  },
+
+  {
+    id: 'loyal-category-fans',
+    title: 'Повне охоплення асортименту категорії клієнтами',
+    description: 'Постійні клієнти, які придбали всі товарні позиції обраної категорії.',
+    params: ['categoryName'],
+  },
+  {
+    id: 'top-products-premium',
+    title: 'Топ товарів за виручкою (знижка від 10%)',
+    description: 'До трьох позицій із найбільшою виручкою серед преміум-клієнтів.',
     params: [],
   },
 ];
@@ -62,10 +77,19 @@ export default function ReportsPage() {
   const [productTotal, setProductTotal] = useState<number | null>(null);
 
   const [analyticsReport, setAnalyticsReport] = useState<AnalyticsReportType>('category-sales-volume');
+  const [analyticsCategoryName, setAnalyticsCategoryName] = useState('');
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsRows, setAnalyticsRows] = useState<AnalyticsRow[]>([]);
   const [analyticsError, setAnalyticsError] = useState('');
   const [analyticsInfo, setAnalyticsInfo] = useState('');
+
+  const { data: categories = [] } = useQuery({
+    queryKey: ['categories', 'reports-analytics'],
+    queryFn: getCategories,
+  });
+
+  const sortedCategories = useMemo(() => [...categories].sort((a, b) => a.category_name.localeCompare(b.category_name, 'uk')), [categories]);
+  const selectedCategory = useMemo(() => sortedCategories.find((c) => c.category_name === analyticsCategoryName) ?? null, [sortedCategories, analyticsCategoryName]);
 
   const { data: cashiers = [], error: cashiersError } = useQuery({
     queryKey: ['employees', 'cashiers', 'reports'],
@@ -115,6 +139,12 @@ export default function ReportsPage() {
         return false;
       }
     }
+
+    if (selectedAnalyticsOption.params.includes('categoryName') && !analyticsCategoryName.trim()) {
+      setAnalyticsError('Оберіть категорію зі списку.');
+      return false;
+    }
+
     setAnalyticsError('');
     return true;
   };
@@ -125,7 +155,7 @@ export default function ReportsPage() {
 
     try {
       setAnalyticsLoading(true);
-      const rows = await runAnalyticsReport(analyticsReport, { from, to });
+      const rows = await runAnalyticsReport(analyticsReport, { from, to, categoryName: analyticsCategoryName });
       setAnalyticsRows(rows);
       if (rows.length === 0) {
         setAnalyticsInfo('За вказаними умовами дані відсутні.');
@@ -229,6 +259,7 @@ export default function ReportsPage() {
               setAnalyticsRows([]);
               setAnalyticsError('');
               setAnalyticsInfo('');
+              setAnalyticsCategoryName('');
             }}
             sx={{ minWidth: 420 }}
           >
@@ -244,6 +275,20 @@ export default function ReportsPage() {
         <Typography variant="body2" color="text.secondary" mb={2}>
           {selectedAnalyticsOption.description}
         </Typography>
+
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+          {selectedAnalyticsOption.params.includes('categoryName') && (
+            <Autocomplete<Category>
+              options={sortedCategories}
+              getOptionLabel={(option) => option.category_name}
+              value={selectedCategory}
+              onChange={(_, value) => setAnalyticsCategoryName(value?.category_name ?? '')}
+              isOptionEqualToValue={(a, b) => a.category_number === b.category_number}
+              sx={{ minWidth: 320, maxWidth: '100%' }}
+              renderInput={(params) => <TextField {...params} label="Категорія" />}
+            />
+          )}
+        </Box>
 
         {analyticsRows.length > 0 && (
           <TableContainer component={Paper} variant="outlined">
@@ -366,7 +411,6 @@ export default function ReportsPage() {
         </Box>
         {productTotal !== null && <Typography mt={1}>Кількість: {productTotal} шт.</Typography>}
       </Paper>
-
     </Box>
   );
 }
