@@ -5,8 +5,10 @@ export type AnalyticsRow = Record<string, unknown>;
 export type AnalyticsReportType =
   | 'category-sales-volume'
   | 'vip-customers'
-  | 'loyal-category-fans' 
-  | 'top-products-premium';
+  | 'loyal-category-fans'
+  | 'top-products-premium'
+  | 'purchasing-power'
+  | 'base-basket';
 
 function periodParams(from: string, to: string) {
   return {
@@ -39,9 +41,21 @@ export const getTopProductsPremium = async (): Promise<AnalyticsRow[]> => {
   return data;
 };
 
+export const getPurchasingPowerByCity = async (city: string): Promise<AnalyticsRow[]> => {
+  const { data } = await apiClient.get<AnalyticsRow[]>('/analytics/reports/purchasing-power', {
+    params: { city: city.trim() },
+  });
+  return data;
+};
+
+export const getBaseBasket = async (): Promise<AnalyticsRow[]> => {
+  const { data } = await apiClient.get<AnalyticsRow[]>('/analytics/base-basket');
+  return data;
+};
+
 export const runAnalyticsReport = async (
   reportType: AnalyticsReportType,
-  params: { from?: string; to?: string; categoryName?: string }
+  params: { from?: string; to?: string; categoryName?: string; city?: string },
 ): Promise<AnalyticsRow[]> => {
   switch (reportType) {
     case 'category-sales-volume':
@@ -52,6 +66,10 @@ export const runAnalyticsReport = async (
       return getLoyalCategoryFans(params.categoryName ?? '');
     case 'top-products-premium':
       return getTopProductsPremium();
+    case 'purchasing-power':
+      return getPurchasingPowerByCity(params.city ?? '');
+    case 'base-basket':
+      return getBaseBasket();
     default:
       return [];
   }

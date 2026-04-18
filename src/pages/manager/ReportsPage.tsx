@@ -1,24 +1,36 @@
 import { useMemo, useState } from 'react';
-import { 
-  Alert, Box, Button, MenuItem, Paper, TextField, Typography,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Autocomplete 
+import {
+  Alert,
+  Autocomplete,
+  Box,
+  Button,
+  MenuItem,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography,
 } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { getEmployeesByQuery, getCashierSalesReport, type CashierSalesReport } from '../../api/employees';
 import { getAllCashiersSalesSum } from '../../api/checks';
 import { getProductTotalSold } from '../../api/storeProducts';
-import { getCategories } from '../../api/categories'; 
-import { openReportPreview } from '../../utils/reportPrint';
-import { type Employee, type Category } from '../../types'; 
-import { getApiErrorMessage } from '../../utils/apiError';
 import { runAnalyticsReport, type AnalyticsReportType, type AnalyticsRow } from '../../api/analytics';
+import { getCategories } from '../../api/categories';
+import { getCustomers } from '../../api/customers';
+import { openReportPreview } from '../../utils/reportPrint';
+import { getApiErrorMessage } from '../../utils/apiError';
+import { type Category, type Employee } from '../../types';
 
 interface AnalyticsReportOption {
   id: AnalyticsReportType;
   title: string;
   description: string;
-  params: Array<'period' | 'categoryName'>; 
+  params: Array<'period' | 'categoryName' | 'city'>;
 }
 
 const ANALYTICS_OPTIONS: AnalyticsReportOption[] = [
@@ -34,17 +46,28 @@ const ANALYTICS_OPTIONS: AnalyticsReportOption[] = [
     description: 'Постійні клієнти, які мають покупки з кожної наявної категорії.',
     params: [],
   },
-
   {
     id: 'loyal-category-fans',
     title: 'Повне охоплення асортименту категорії клієнтами',
-    description: 'Постійні клієнти, які придбали всі товарні позиції обраної категорії.',
+    description: 'Постійні клієнти, які придбали всі товарні позиції обраної категорії, наявні в продажі.',
     params: ['categoryName'],
   },
   {
     id: 'top-products-premium',
-    title: 'Топ товарів за виручкою (знижка від 10%)',
-    description: 'До трьох позицій із найбільшою виручкою серед преміум-клієнтів.',
+    title: 'Топ товарів за виручкою (знижка клієнта від 10%)',
+    description: 'До трьох позицій із найбільшою сумарною виручкою серед чеків клієнтів із персональною знижкою не менше 10%.',
+    params: [],
+  },
+  {
+    id: 'purchasing-power',
+    title: 'Оборот і чеки постійних клієнтів за містом',
+    description: 'Кількість чеків і сума покупок по кожному постійному клієнту для вказаного міста реєстрації.',
+    params: ['city'],
+  },
+  {
+    id: 'base-basket',
+    title: 'Універсальні товари для постійних клієнтів',
+    description: 'Товари, які придбали всі постійні клієнти (перетин асортименту).',
     params: [],
   },
 ];
@@ -75,30 +98,56 @@ export default function ReportsPage() {
   const [cashierReport, setCashierReport] = useState<CashierSalesReport | null>(null);
   const [allCashiersSum, setAllCashiersSum] = useState<number | null>(null);
   const [productTotal, setProductTotal] = useState<number | null>(null);
-
   const [analyticsReport, setAnalyticsReport] = useState<AnalyticsReportType>('category-sales-volume');
   const [analyticsCategoryName, setAnalyticsCategoryName] = useState('');
+  const [analyticsCity, setAnalyticsCity] = useState('');
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsRows, setAnalyticsRows] = useState<AnalyticsRow[]>([]);
   const [analyticsError, setAnalyticsError] = useState('');
   const [analyticsInfo, setAnalyticsInfo] = useState('');
-
-  const { data: categories = [] } = useQuery({
-    queryKey: ['categories', 'reports-analytics'],
-    queryFn: getCategories,
-  });
-
-  const sortedCategories = useMemo(() => [...categories].sort((a, b) => a.category_name.localeCompare(b.category_name, 'uk')), [categories]);
-  const selectedCategory = useMemo(() => sortedCategories.find((c) => c.category_name === analyticsCategoryName) ?? null, [sortedCategories, analyticsCategoryName]);
 
   const { data: cashiers = [], error: cashiersError } = useQuery({
     queryKey: ['employees', 'cashiers', 'reports'],
     queryFn: () => getEmployeesByQuery({ role: 'cashier' }),
   });
 
+  const { data: categories = [] } = useQuery({
+    queryKey: ['categories', 'reports-analytics'],
+    queryFn: getCategories,
+  });
+
+  const { data: customers = [] } = useQuery({
+    queryKey: ['customer-cards', 'reports-analytics-cities'],
+    queryFn: getCustomers,
+  });
+
   const cashierOptions = useMemo(
     () => cashiers.map((c: Employee) => ({ id: c.id_employee, label: `${c.empl_surname} ${c.empl_name}` })),
     [cashiers],
+  );
+
+  const sortedCategories = useMemo(
+    () => [...categories].sort((a, b) => a.category_name.localeCompare(b.category_name, 'uk')),
+    [categories],
+  );
+
+  const cityOptions = useMemo(() => {
+    const set = new Set<string>();
+    customers.forEach((c) => {
+      const city = c.city?.trim();
+      if (city) set.add(city);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'uk'));
+  }, [customers]);
+
+  const selectedCategory = useMemo(
+    () => sortedCategories.find((c) => c.category_name === analyticsCategoryName) ?? null,
+    [sortedCategories, analyticsCategoryName],
+  );
+
+  const selectedAnalyticsOption = useMemo(
+    () => ANALYTICS_OPTIONS.find((option) => option.id === analyticsReport) ?? ANALYTICS_OPTIONS[0],
+    [analyticsReport],
   );
 
   const analyticsColumns = useMemo(() => {
@@ -108,11 +157,6 @@ export default function ReportsPage() {
     });
     return Array.from(keys);
   }, [analyticsRows]);
-
-  const selectedAnalyticsOption = useMemo(
-    () => ANALYTICS_OPTIONS.find((option) => option.id === analyticsReport) ?? ANALYTICS_OPTIONS[0],
-    [analyticsReport],
-  );
 
   const validateRange = () => {
     setInfo('');
@@ -145,6 +189,11 @@ export default function ReportsPage() {
       return false;
     }
 
+    if (selectedAnalyticsOption.params.includes('city') && !analyticsCity.trim()) {
+      setAnalyticsError('Оберіть місто зі списку або введіть назву вручну.');
+      return false;
+    }
+
     setAnalyticsError('');
     return true;
   };
@@ -155,7 +204,12 @@ export default function ReportsPage() {
 
     try {
       setAnalyticsLoading(true);
-      const rows = await runAnalyticsReport(analyticsReport, { from, to, categoryName: analyticsCategoryName });
+      const rows = await runAnalyticsReport(analyticsReport, {
+        from,
+        to,
+        categoryName: analyticsCategoryName,
+        city: analyticsCity,
+      });
       setAnalyticsRows(rows);
       if (rows.length === 0) {
         setAnalyticsInfo('За вказаними умовами дані відсутні.');
@@ -255,11 +309,14 @@ export default function ReportsPage() {
             label="Аналітичний звіт"
             value={analyticsReport}
             onChange={(e) => {
-              setAnalyticsReport(e.target.value as AnalyticsReportType);
+              const next = e.target.value as AnalyticsReportType;
+              const nextOpt = ANALYTICS_OPTIONS.find((o) => o.id === next) ?? ANALYTICS_OPTIONS[0];
+              setAnalyticsReport(next);
               setAnalyticsRows([]);
               setAnalyticsError('');
               setAnalyticsInfo('');
-              setAnalyticsCategoryName('');
+              if (!nextOpt.params.includes('categoryName')) setAnalyticsCategoryName('');
+              if (!nextOpt.params.includes('city')) setAnalyticsCity('');
             }}
             sx={{ minWidth: 420 }}
           >
@@ -276,16 +333,35 @@ export default function ReportsPage() {
           {selectedAnalyticsOption.description}
         </Typography>
 
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2, alignItems: 'flex-start' }}>
           {selectedAnalyticsOption.params.includes('categoryName') && (
             <Autocomplete<Category>
               options={sortedCategories}
               getOptionLabel={(option) => option.category_name}
               value={selectedCategory}
-              onChange={(_, value) => setAnalyticsCategoryName(value?.category_name ?? '')}
+              onChange={(_, value) => {
+                setAnalyticsCategoryName(value?.category_name ?? '');
+              }}
               isOptionEqualToValue={(a, b) => a.category_number === b.category_number}
               sx={{ minWidth: 320, maxWidth: '100%' }}
-              renderInput={(params) => <TextField {...params} label="Категорія" />}
+              renderInput={(params) => (
+                <TextField {...params} label="Категорія" placeholder="Почніть вводити назву…" />
+              )}
+            />
+          )}
+
+          {selectedAnalyticsOption.params.includes('city') && (
+            <Autocomplete
+              freeSolo
+              options={cityOptions}
+              value={analyticsCity}
+              onChange={(_, newValue) => setAnalyticsCity(newValue ?? '')}
+              inputValue={analyticsCity}
+              onInputChange={(_, newInputValue) => setAnalyticsCity(newInputValue)}
+              sx={{ minWidth: 320, maxWidth: '100%' }}
+              renderInput={(params) => (
+                <TextField {...params} label="Місто" placeholder="Оберіть або введіть назву…" />
+              )}
             />
           )}
         </Box>
@@ -411,6 +487,7 @@ export default function ReportsPage() {
         </Box>
         {productTotal !== null && <Typography mt={1}>Кількість: {productTotal} шт.</Typography>}
       </Paper>
+
     </Box>
   );
 }
