@@ -23,8 +23,8 @@ export default function CashierStoreProductsPage() {
     },
   });
 
-  /** За ТЗ для касира на вітрині — лише UPC, ціна, кількість (дані з обмеженої відповіді списку не дублюємо назвою в таблиці). */
   const columns: GridColDef[] = [
+    { field: 'product_name', headerName: 'Назва товару', width: 260, sortable: false, filterable: false },
     { field: 'upc', headerName: 'UPC', width: 160, sortable: false, filterable: false },
     {
       field: 'selling_price',
@@ -80,10 +80,6 @@ export default function CashierStoreProductsPage() {
           Застосувати
         </Button>
       </Box>
-
-      <Alert severity="info" sx={{ mb: 2 }}>
-        Деталі за одним UPC (лише ціна та залишок) доступні через POS-екран «Новий продаж».
-      </Alert>
 
       <Box sx={{ bgcolor: 'white', borderRadius: 2, overflow: 'hidden' }}>
         <DataGrid

@@ -45,6 +45,14 @@ export const searchEmployeeContactsBySurname = async (surname: string): Promise<
   return data;
 };
 
+/** Менеджер: пошук працівників за прізвищем у загальному переліку. */
+export const searchEmployeesBySurname = async (surname: string): Promise<Employee[]> => {
+  const { data } = await apiClient.get<Employee[]>(
+    `/employees/search-by-surname/${encodeURIComponent(surname.trim())}`,
+  );
+  return data;
+};
+
 export const getEmployeesByQuery = async (params?: EmployeesQueryParams): Promise<Employee[]> => {
   if (params?.role === 'cashier') {
     return getCashiersSortedBySurname();
@@ -53,11 +61,6 @@ export const getEmployeesByQuery = async (params?: EmployeesQueryParams): Promis
 };
 
 export const getCashiers = async (): Promise<Employee[]> => getCashiersSortedBySurname();
-
-export const getEmployee = async (id: string): Promise<Employee> => {
-  const { data } = await apiClient.get<Employee>(`/employees/${id}`);
-  return data;
-};
 
 export const getMyEmployeeProfile = async (): Promise<Employee> => {
   const { data } = await apiClient.get<Employee>('/employees/me');

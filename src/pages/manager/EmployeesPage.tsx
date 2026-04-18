@@ -18,6 +18,7 @@ import { AxiosError } from 'axios';
 import {
   getEmployeesSortedBySurname,
   getCashiersSortedBySurname,
+  searchEmployeesBySurname,
   searchEmployeeContactsBySurname,
   createEmployee,
   updateEmployee,
@@ -70,14 +71,7 @@ export default function EmployeesPage() {
     queryFn: async () => {
       if (viewMode === 'cashiers') return getCashiersSortedBySurname();
       if (viewMode === 'search') {
-        const all = await getEmployeesSortedBySurname();
-        const s = appliedSurname.trim().toLowerCase();
-        if (!s) return [];
-        return all.filter(
-          (e) =>
-            e.empl_surname.toLowerCase().includes(s)
-            || `${e.empl_surname} ${e.empl_name}`.toLowerCase().includes(s),
-        );
+        return searchEmployeesBySurname(appliedSurname);
       }
       return getEmployeesSortedBySurname();
     },

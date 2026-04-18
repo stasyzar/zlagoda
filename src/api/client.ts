@@ -28,7 +28,7 @@ function transformKeys(obj: unknown, transform: (key: string) => string): unknow
   return obj;
 }
 
-// Автоматично додає токен + конвертує snake_case → camelCase для запитів
+// Запити з UI (snake_case в типах/формах) конвертуємо в camelCase для Spring DTO.
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
@@ -38,7 +38,7 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-// Конвертує camelCase → snake_case для відповідей; якщо 401 — виходимо
+// Відповіді API (camelCase) конвертуємо в snake_case для UI; якщо 401 — виходимо.
 apiClient.interceptors.response.use(
   (res) => {
     if (res.data) {
