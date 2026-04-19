@@ -229,9 +229,6 @@ export default function CashierChecksPage() {
       {checkLookupError ? <Alert severity="error" sx={{ mb: 2 }}>{checkLookupError}</Alert> : null}
 
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2, bgcolor: 'white', p: 2, borderRadius: 2 }}>
-        <Typography variant="body2" color="text.secondary">
-          Кожен режим — окремий запит на бекенд після «Застосувати».
-        </Typography>
         <ToggleButtonGroup
           value={viewDraft}
           exclusive

@@ -18,13 +18,13 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { getEmployeesByQuery, getCashierSalesReport, type CashierSalesReport } from '../../api/employees';
 import { getAllCashiersSalesSum } from '../../api/checks';
-import { getProductTotalSold } from '../../api/storeProducts';
+import { getProductTotalSold, getStoreProducts } from '../../api/storeProducts';
 import { runAnalyticsReport, type AnalyticsReportType, type AnalyticsRow } from '../../api/analytics';
 import { getCategories } from '../../api/categories';
 import { getCustomers } from '../../api/customers';
 import { openReportPreview } from '../../utils/reportPrint';
 import { getApiErrorMessage } from '../../utils/apiError';
-import { type Category, type Employee } from '../../types';
+import { type Category, type Employee, type StoreProductListRow } from '../../types';
 
 interface AnalyticsReportOption {
   id: AnalyticsReportType;
@@ -121,6 +121,11 @@ export default function ReportsPage() {
     queryFn: getCustomers,
   });
 
+  const { data: storeProducts = [] } = useQuery({
+    queryKey: ['store-products', 'reports-upc'],
+    queryFn: getStoreProducts,
+  });
+
   const cashierOptions = useMemo(
     () => cashiers.map((c: Employee) => ({ id: c.id_employee, label: `${c.empl_surname} ${c.empl_name}` })),
     [cashiers],
@@ -148,6 +153,16 @@ export default function ReportsPage() {
   const selectedAnalyticsOption = useMemo(
     () => ANALYTICS_OPTIONS.find((option) => option.id === analyticsReport) ?? ANALYTICS_OPTIONS[0],
     [analyticsReport],
+  );
+
+  const sortedStoreProducts = useMemo(
+    () => [...storeProducts].sort((a, b) => a.upc.localeCompare(b.upc, 'uk')),
+    [storeProducts],
+  );
+
+  const selectedStoreProduct = useMemo(
+    () => sortedStoreProducts.find((item) => item.upc === upc) ?? null,
+    [sortedStoreProducts, upc],
   );
 
   const analyticsColumns = useMemo(() => {
@@ -272,7 +287,7 @@ export default function ReportsPage() {
   const loadProductReport = async () => {
     if (!validateRange()) return;
     if (!upc.trim()) {
-      setError('Вкажи UPC товару.');
+      setError('Обери UPC товару зі списку.');
       return;
     }
     try {
@@ -469,7 +484,19 @@ export default function ReportsPage() {
       <Paper sx={{ p: 2 }}>
         <Typography variant="subtitle1" fontWeight={600} mb={2}>3) Кількість проданих одиниць товару (за UPC) за період</Typography>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-          <TextField label="UPC" value={upc} onChange={(e) => setUpc(e.target.value)} />
+          <Autocomplete<StoreProductListRow>
+            options={sortedStoreProducts}
+            getOptionLabel={(option) => `${option.upc}${option.product_name ? ` — ${option.product_name}` : ''}`}
+            value={selectedStoreProduct}
+            onChange={(_, value) => {
+              setUpc(value?.upc ?? '');
+            }}
+            isOptionEqualToValue={(a, b) => a.upc === b.upc}
+            sx={{ minWidth: 360, maxWidth: '100%' }}
+            renderInput={(params) => (
+              <TextField {...params} label="UPC товару" placeholder="Оберіть UPC зі списку…" />
+            )}
+          />
           <Button variant="contained" onClick={loadProductReport} disabled={loading === 'product'}>
             {loading === 'product' ? 'Завантаження...' : 'Побудувати'}
           </Button>
