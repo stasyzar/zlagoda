@@ -40,36 +40,93 @@ export function openReportPreview<T>(
         <meta charset="UTF-8" />
         <title>${escapeHtml(title)}</title>
         <style>
-          body { font-family: Arial, sans-serif; margin: 24px; color: #111; }
-          .report-header { margin-bottom: 16px; }
-          .report-footer { margin-top: 16px; font-size: 12px; color: #555; }
+          @page { margin: 0; }
+          html, body { width: 100%; margin: 0; padding: 0; }
+          body { font-family: Arial, sans-serif; color: #111; }
+          .report-page {
+            width: 100%;
+            min-height: 100vh;
+            box-sizing: border-box;
+            display: grid;
+            grid-template-rows: auto 1fr auto auto;
+            padding: 0;
+          }
+          .report-header {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px 16px;
+            border-bottom: 1px solid #ddd;
+          }
+          .report-main { width: 100%; box-sizing: border-box; }
           table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; word-wrap: break-word; }
+          th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            word-break: break-word;
+            white-space: normal;
+            vertical-align: top;
+          }
           th { background: #f3f3f3; }
-          .actions { margin-top: 16px; display: flex; gap: 8px; }
+          .report-footer {
+            width: 100%;
+            box-sizing: border-box;
+            height: 44px;
+            padding: 0 16px;
+            border-top: 1px solid #ddd;
+            font-size: 12px;
+            color: #555;
+            display: flex;
+            align-items: center;
+          }
+          .actions {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px 16px;
+            display: flex;
+            gap: 8px;
+          }
           @media print {
             .actions { display: none; }
-            body { margin: 12mm; }
+            .report-page { min-height: auto; display: block; }
+            .report-header, .report-footer {
+              padding-left: 8mm;
+              padding-right: 8mm;
+            }
+            .report-main { margin-bottom: 14mm; }
+            .report-footer {
+              position: fixed;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              height: 14mm;
+              background: #fff;
+            }
+            th, td { font-size: 12px; }
           }
         </style>
       </head>
       <body>
-        <header class="report-header">
-          <h1>${escapeHtml(title)}</h1>
-          <p><strong>Згенеровано:</strong> ${escapeHtml(generatedAt)}</p>
-          ${filtersBlock}
-          <p><strong>Кількість записів:</strong> ${rows.length}</p>
-        </header>
-        <table>
-          <thead><tr>${headerHtml}</tr></thead>
-          <tbody>${bodyHtml}</tbody>
-        </table>
-        <footer class="report-footer">
-          <p>Звіт АІС "ZLAGODA"</p>
-        </footer>
-        <div class="actions">
-          <button onclick="window.print()">Друк</button>
-          <button onclick="window.close()">Закрити</button>
+        <div class="report-page">
+          <header class="report-header">
+            <h1>${escapeHtml(title)}</h1>
+            <p><strong>Згенеровано:</strong> ${escapeHtml(generatedAt)}</p>
+            ${filtersBlock}
+            <p><strong>Кількість записів:</strong> ${rows.length}</p>
+          </header>
+          <main class="report-main">
+            <table>
+              <thead><tr>${headerHtml}</tr></thead>
+              <tbody>${bodyHtml}</tbody>
+            </table>
+          </main>
+          <footer class="report-footer">
+            <p>Звіт АІС "ZLAGODA"</p>
+          </footer>
+          <div class="actions">
+            <button onclick="window.print()">Друк</button>
+            <button onclick="window.close()">Закрити</button>
+          </div>
         </div>
       </body>
     </html>
