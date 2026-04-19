@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Box, Button, Typography, TextField, InputAdornment,
   Dialog, DialogTitle, DialogContent, DialogActions,
@@ -39,7 +39,7 @@ export default function StoreProductsPage() {
   const [selected, setSelected] = useState<StoreProductListRow | null>(null);
   const [apiError, setApiError] = useState('');
 
-  const { register, handleSubmit, reset, control, watch, formState: { errors } } = useForm<StoreProductListRow>();
+  const { register, handleSubmit, reset, setValue, resetField, control, watch, formState: { errors } } = useForm<StoreProductListRow>();
   const watchIdProduct = watch('id_product');
   const watchPromo = watch('promotional_product');
   const idProductNum = typeof watchIdProduct === 'number' ? watchIdProduct : Number(watchIdProduct);
@@ -89,6 +89,20 @@ export default function StoreProductsPage() {
     (sp) => !sp.promotional_product && sp.id_product === idProductNum,
   );
   const creatingPromoWithKnownRegular = !selected && Boolean(watchPromo) && Boolean(regularForCurrentProduct);
+
+  useEffect(() => {
+    if (selected) return;
+    if (creatingPromoWithKnownRegular) {
+      setValue('selling_price', Number((regularForCurrentProduct!.selling_price * 0.8).toFixed(2)), {
+        shouldDirty: false,
+        shouldValidate: false,
+      });
+      return;
+    }
+    if (!watchPromo) {
+      resetField('selling_price', { defaultValue: undefined });
+    }
+  }, [selected, watchPromo, creatingPromoWithKnownRegular, regularForCurrentProduct, setValue, resetField]);
 
   const createMutation = useMutation({
     mutationFn: createStoreProduct,
@@ -375,6 +389,7 @@ export default function StoreProductsPage() {
                 type="number"
                 value={selected.selling_price}
                 disabled
+                InputLabelProps={{ shrink: true }}
                 helperText="Для акційного UPC ціна лише від звичайного (×0.8), змінюється на бекенді"
               />
             ) : creatingPromoWithKnownRegular ? (
@@ -384,6 +399,7 @@ export default function StoreProductsPage() {
                 size="small"
                 value={Number(regularForCurrentProduct!.selling_price * 0.8).toFixed(2)}
                 disabled
+                InputLabelProps={{ shrink: true }}
                 helperText="Для нового акційного UPC ціна буде розрахована автоматично від звичайного товару (×0.8)."
               />
             ) : (
